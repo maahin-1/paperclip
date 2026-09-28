@@ -426,7 +426,7 @@ diff --git a/dist/paperclip-runtime.js b/dist/paperclip-runtime.js
 new file mode 100644
 --- /dev/null
 +++ b/dist/paperclip-runtime.js
-@@ -0,0 +1,259 @@
+@@ -0,0 +1,261 @@
 +/** Source for the helper embedded in patches/pi-acp@0.0.33.patch. */
 +import { StringDecoder } from "node:string_decoder";
 +import { isAbsolute, relative, resolve, sep } from "node:path";
@@ -541,7 +541,9 @@ new file mode 100644
 +    instructions: environment.PAPERCLIP_PI_SYSTEM_INSTRUCTIONS ?? "",
 +  });
 +  if (Buffer.byteLength(configuration) > 64 * 1024) throw new Error("Pi launch configuration exceeds its bound");
-+  const args = [entrypoint, "--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve", "--offline", "-e", extension];
++  const guard = environment.PAPERCLIP_PI_MODULE_GUARD_PATH === undefined ? []
++    : ["--require", requiredFile(environment, "PAPERCLIP_PI_MODULE_GUARD_PATH")];
++  const args = [...guard, entrypoint, "--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve", "--offline", "-e", extension];
 +  for (const root of readRoots) args.push("--skill", root);
 +  if (params.sessionPath) {
 +    const home = environment.PI_CODING_AGENT_DIR;

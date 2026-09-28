@@ -112,7 +112,9 @@ export function createPiLaunchSpec(
     instructions: environment.PAPERCLIP_PI_SYSTEM_INSTRUCTIONS ?? "",
   });
   if (Buffer.byteLength(configuration) > 64 * 1024) throw new Error("Pi launch configuration exceeds its bound");
-  const args = [entrypoint, "--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve", "--offline", "-e", extension];
+  const guard = environment.PAPERCLIP_PI_MODULE_GUARD_PATH === undefined ? []
+    : ["--require", requiredFile(environment, "PAPERCLIP_PI_MODULE_GUARD_PATH")];
+  const args = [...guard, entrypoint, "--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve", "--offline", "-e", extension];
   for (const root of readRoots) args.push("--skill", root);
   if (params.sessionPath) {
     const home = environment.PI_CODING_AGENT_DIR;

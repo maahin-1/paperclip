@@ -26,7 +26,7 @@ boundaries explicit.
 | Semantic tools | Runner-owned loopback HTTP MCP catalogs register under exact `mcp__<server>__<tool>` names. Calls retain the native tool call ID and cancellation signal. Authenticated PRP tool handling owns semantic authorization and durable interactions. Ambient MCP and external MCP servers are not admitted. |
 | Plans and artifacts | Pi has no native structured plan or artifact channel. Paperclip plan and artifact semantic tools remain available through the MCP bridge; native file edits retain bounded, workspace-confined ACP diff projection. Tool text/image results are preserved, and resource blocks are recorded without following URLs. |
 | Steering | Capability-negotiated `pi/steer` issues native RPC `steer` during an active turn. `pi/follow_up` explicitly queues native RPC `follow_up`. Neither is inferred from a second ACP prompt. Each takes `{sessionId, message}` and returns `{accepted: true}`. |
-| Usage | Prompt results sum actual assistant message usage receipts across continuations. Input, output, cache reads/writes, total tokens and provider-reported cost have provenance. Context-window occupancy is not billed usage. No receipt means no usage assertion. |
+| Usage | Prompt results sum actual assistant message usage receipts across continuations. Input, output, cache reads/writes, total tokens and Pi-reported pricing estimates have provenance. Context-window occupancy is not billed usage. No receipt means no usage assertion; absent cache or cost fields remain unknown. Pi calculates cost from its model catalog rates, so this is not an authoritative provider bill. |
 | Retry and compaction | Upstream retry/compaction notices are retained. `agent_settled`, rather than a transient `agent_end`, settles a prompt. A final provider error remains a failed prompt and does not become successful completion. |
 | Images | Upstream ACP image prompt blocks are passed to native Pi RPC. Model-specific image support still requires live qualification. |
 | Cancellation and death | Cancellation expires live UI waits and calls native abort. Pi process exit rejects pending RPC requests and all active/queued turns. Partial RPC frames, oversized frames, and malformed JSON fail closed. |
@@ -99,8 +99,8 @@ host must retain its immutable snapshot and process guardian through termination
 The published Pi package has a shrinkwrap and a nested dependency graph. Provider
 pack creation must copy the complete installed graph and use the same pinned Pi
 family dependencies, rather than reconstructing the graph from `cli.js` imports.
-The emitted `dist/drivers/acpx/pi-runtime-extension.js` must be included in every
-macOS arm64/x64 and Linux x64 pack. The wrapper's `dist/paperclip-runtime.js` is
+The emitted owned extension must be included in every macOS arm64/x64 and Linux
+x64 pack; the candidate materializer emits it at `runtime/extensions/paperclip.js`. The wrapper's `dist/paperclip-runtime.js` is
 part of its verified package and must never be omitted from a copy or hash.
 
 ## Verification and maintenance
@@ -136,3 +136,57 @@ Primary references reviewed:
 - [Pi RPC protocol](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/rpc.md)
 - [Pi extensions](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/extensions.md)
 - [ACP protocol and SDK](https://github.com/agentclientprotocol/typescript-sdk)
+
+## Candidate distribution build
+
+Run `node packages/paperclip-runner/scripts/materialize-pi-distribution.mjs
+/absolute/new-output` on the target build host. Supported targets are macOS arm64,
+macOS x64 and Linux x64; no cross-platform qualification is inferred. The builder
+uses exact official Node 24.19.0, pinned archive SHA-256 and executable SHA-256
+for each target. `--node=/absolute/portable-node` reuses a matching binary; without
+it the builder downloads the pinned official archive. It rejects non-system
+dynamic-library dependencies and executes the copied interpreter after relocation.
+The initial Homebrew Node discovery failed this portability check and is not an
+admitted pack interpreter.
+
+The isolated `scripts/pi-distribution/package-lock.json` pins all 143 dependency
+packages and registry integrity, without changing the workspace pnpm graph. It
+preserves Pi's upstream nested shrinkwrap, and adds npm registry SHA-512 integrity
+for the six exact 0.84.2 Pi family packages whose published shrinkwrap omitted it.
+Installation uses `npm ci --ignore-scripts`, public registry access, private npm
+configuration and an environment without npm or provider credentials. The builder
+checks every locked installed version and upstream shrinkwrap entry, applies the
+owned ACP patch, verifies the helper matches its TypeScript source, and compiles
+the owned extension to `runtime/extensions/paperclip.js`.
+
+The result contains `runtime/` and a sibling `pi-distribution.json`. Keeping the
+manifest outside its inventoried root avoids a self-referential file digest. The
+returned environment bindings point into `runtime/`; callers must retain a verified
+immutable lease on that entire root. Additional native libraries, package files,
+WASM, data, and templates are all included in the inventory. Only npm-generated
+`.bin` symlinks and its hidden installation lock are omitted; launch always uses
+verified explicit files. The regular-file `native-closure.json` is independently
+bound to a trusted per-target source constant. Its `pi-entry.cjs` bootstrap derives
+snapshot-relative Node, Pi, extension and module-guard bindings; the Pi subprocess
+loads the same verified module guard.
+
+Proposed common provider-pack integration: an explicit `--candidate-provider=pi`
+flag invokes exported `materializePiDistribution` into
+`provider-assets/pi/<platform-arch>`, records the returned manifest digest and metadata path
+in the outer pack payload, and includes the entire distribution in the outer
+pack's integrity proof. The flag prepares an inspectable candidate; it must not
+change its qualification status or enable admission without required live proof.
+The default provider pack remains independent of this isolated graph.
+
+On 2026-09-28 the builder completed a real public-registry installation on macOS
+arm64 with official Node 24.19.0. The resulting complete distribution passed all eight patched
+wrapper and real Pi admission tests; those tests never submit a model prompt to a
+provider. Five builder tests cover the full dependency lock, missing/changed
+packages, missing shrinkwrap entries, resource mutation, escaping links and unsafe
+output paths. Linux x64/Daytona and macOS x64 execution remain pending.
+
+Official Node archive and executable pins are recorded in `pi-node-pins.ts`;
+archive hashes were checked against the [official Node release checksums](https://nodejs.org/dist/v24.19.0/SHASUMS256.txt).
+The x64 closure pins combine the identical locked package/resource graph with each
+verified official x64 interpreter. They are candidate artifact identity, not proof
+that those targets have executed successfully.

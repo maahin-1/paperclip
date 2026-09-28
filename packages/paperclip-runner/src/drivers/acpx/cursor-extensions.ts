@@ -9,6 +9,7 @@ import {
   type PaperclipQuestionSet,
 } from "../../contracts/question-set.js";
 import type { CanonicalProviderEvent } from "../../provider-events.js";
+import type { HarnessRuntimeRequestResolution } from "../../contracts/harness-driver.js";
 
 export const CURSOR_EXTENSION_REQUEST_METHODS = [
   "cursor/ask_question", "cursor/create_plan",
@@ -18,6 +19,85 @@ export const CURSOR_EXTENSION_REQUEST_METHODS = [
 export const CURSOR_EXTENSION_NOTIFICATION_METHODS = [
   "cursor/update_todos", "cursor/task", "cursor/generate_image",
 ] as const;
+export const CURSOR_CLIENT_CAPABILITIES = { _meta: { subagents: true } } as const;
+
+type CursorExtensionInput = {
+  method: string;
+  questionSet: PaperclipQuestionSet;
+  details: Record<string, unknown>;
+  resolve(resolution: HarnessRuntimeRequestResolution): Record<string, unknown>;
+  cancel(): Record<string, unknown>;
+};
+type CursorExtensionResult = { input: CursorExtensionInput }
+  | { events: CanonicalProviderEvent[]; response: Record<string, unknown> };
+
+/** One adapter belongs to exactly one active session/turn, never a warm process. */
+export function createCursorProfileExtensionAdapter(context: {
+  workspacePath: string; sessionId: string; turnId: string;
+}) {
+  const normalizeNotification = createCursorNotificationNormalizer(context);
+  const normalizeSubagent = createCursorSubagentNormalizer();
+  const children = new Map<string, { toolCallId: string; agentId?: string }>();
+  const assertSession = (params: Record<string, unknown>) => {
+    if (params.sessionId !== context.sessionId) throw new Error("Cursor extension has a stale parent session");
+  };
+  return {
+    async request(method: string, params: Record<string, unknown>): Promise<CursorExtensionResult> {
+      assertSession(params);
+      if (method === "cursor/ask_question") {
+        const question = normalizeCursorQuestionRequest(params);
+        return { input: {
+          method, questionSet: question.questionSet, details: { toolCallId: question.toolCallId },
+          cancel: question.cancel,
+          resolve(resolution) {
+            if (resolution.action === "cancel") return question.cancel();
+            if (resolution.action === "decline") return question.skip();
+            if (resolution.action !== "submit" || !("response" in resolution)) throw new Error("Cursor questions require a complete canonical answer");
+            return question.resolve(resolution.response);
+          },
+        } };
+      }
+      if (method === "cursor/create_plan") {
+        const plan = normalizeCursorPlanRequest(params);
+        return { input: {
+          method, questionSet: plan.questionSet, details: { toolCallId: plan.toolCallId, revision: plan.revision },
+          cancel: plan.cancel,
+          resolve(resolution) {
+            if (resolution.action === "cancel") return plan.cancel();
+            if (resolution.action === "decline") return { outcome: { outcome: "rejected" } };
+            if (resolution.action !== "submit" || !("response" in resolution)) throw new Error("Cursor plan decisions require the displayed revision");
+            return plan.resolve(resolution.response);
+          },
+        } };
+      }
+      if (!(CURSOR_EXTENSION_NOTIFICATION_METHODS as readonly string[]).includes(method)) throw new Error("Unsupported Cursor extension request");
+      return { events: await normalizeNotification(method, params), response: {} };
+    },
+    async notification(method: string, params: Record<string, unknown>): Promise<CanonicalProviderEvent[]> {
+      assertSession(params);
+      if (method !== "cursor/subagent_update") return normalizeNotification(method, params);
+      // The transport synthesizes this method only from the two pinned native
+      // session/update variants, after checking the active parent connection.
+      const update = object(params.update);
+      const id = requiredText(update.subagentSessionId, "subagentSessionId", 1_000);
+      if (id === context.sessionId) throw new Error("Cursor child cannot impersonate its parent session");
+      const metadata = object(object(update._meta).cursor);
+      const toolCallId = requiredText(metadata.toolCallId, "subagent toolCallId", 1_000);
+      const agentId = optionalText(metadata.agentId, "subagent agentId", 1_000);
+      const previous = children.get(id);
+      if (update.sessionUpdate === "subagent_spawned") {
+        if (previous || children.size >= 256) throw new Error("Cursor child session identity is duplicated or over capacity");
+      } else if (update.sessionUpdate !== "subagent_state_update" || !previous) {
+        throw new Error("Cursor child update has no spawn in this active turn");
+      }
+      if (previous && (previous.toolCallId !== toolCallId || previous.agentId !== agentId)) throw new Error("Cursor child update changed its origin identity");
+      const event = normalizeSubagent(update);
+      if (!event) throw new Error("Unsupported Cursor child update");
+      children.set(id, { toolCallId, agentId });
+      return [event];
+    },
+  };
+}
 
 type CursorQuestionResult = { outcome:
   | { outcome: "answered"; answers: Array<{ questionId: string; selectedOptionIds: string[] }> }

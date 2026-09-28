@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { PAPERCLIP_QUESTION_RESPONSE_SCHEMA } from "../../contracts/question-set.js";
 import {
-  createCursorNotificationNormalizer, createCursorSubagentNormalizer, cursorWorkspaceArtifactReference,
+  createCursorNotificationNormalizer, createCursorProfileExtensionAdapter, createCursorSubagentNormalizer, cursorWorkspaceArtifactReference,
   normalizeCursorPlanRequest, normalizeCursorQuestionRequest, normalizeCursorSubagentUpdate,
 } from "./cursor-extensions.js";
 
@@ -92,5 +92,55 @@ describe("Cursor rich notifications", () => {
     const normalize = createCursorSubagentNormalizer();
     normalize({ ...base, sessionUpdate: "subagent_spawned", name: "Explore", task: "Find tests" });
     expect(normalize({ ...base, sessionUpdate: "subagent_state_update", state: "completed" })).toMatchObject({ payload: { children: [{ role: "Explore", model: "small", summary: "Find tests", status: "completed" }] } });
+  });
+});
+
+describe("Cursor active-turn extension adapter", () => {
+  it("roundtrips canonical answers and plan decisions while rejecting implicit acceptance", async () => {
+    const adapter = createCursorProfileExtensionAdapter({ workspacePath: await workspace(), sessionId: "parent", turnId: "turn" });
+    const question = await adapter.request("cursor/ask_question", { sessionId: "parent", toolCallId: "ask", questions: [
+      { id: "native", prompt: "Choose", options: [{ id: "native-option", label: "One" }] },
+    ] });
+    if (!("input" in question)) throw new Error("question was not blocking");
+    expect(question.input.resolve({ action: "submit", response: response({ "question-1": { selectedOptionIds: ["option-1"] } }) })).toEqual({ outcome: { outcome: "answered", answers: [{ questionId: "native", selectedOptionIds: ["native-option"] }] } });
+    expect(question.input.resolve({ action: "decline" })).toEqual({ outcome: { outcome: "skipped" } });
+    expect(question.input.resolve({ action: "cancel" })).toEqual(question.input.cancel());
+    expect(() => question.input.resolve({ action: "accept" })).toThrow();
+    expect(() => question.input.resolve({ action: "submit", answers: { "question-1": { answers: ["option-1"] } } })).toThrow();
+
+    const plan = await adapter.request("cursor/create_plan", { sessionId: "parent", toolCallId: "plan", plan: "# Complete plan\n".repeat(1_000), todos: [] });
+    if (!("input" in plan)) throw new Error("plan was not blocking");
+    expect(plan.input.details.revision).toMatch(/^[a-f0-9]{64}$/);
+    const id = plan.input.questionSet.questions[0]!.id;
+    expect(plan.input.resolve({ action: "submit", response: response({ [id]: { selectedOptionIds: ["accept"] } }) })).toEqual({ outcome: { outcome: "accepted" } });
+    expect(() => plan.input.resolve({ action: "accept" })).toThrow("displayed revision");
+    expect(plan.input.resolve({ action: "decline" })).toEqual({ outcome: { outcome: "rejected" } });
+    expect(plan.input.cancel()).toEqual({ outcome: { outcome: "cancelled" } });
+  });
+
+  it("acknowledges native request-shaped activity and preserves its reducer order", async () => {
+    const adapter = createCursorProfileExtensionAdapter({ workspacePath: await workspace(), sessionId: "parent", turnId: "turn" });
+    const first = await adapter.request("cursor/update_todos", { sessionId: "parent", toolCallId: "a", merge: false, todos: [{ id: "a", content: "Read", status: "pending" }] });
+    expect(first).toMatchObject({ response: {}, events: [{ eventType: "plan.updated", payload: { revision: 1 } }] });
+    const second = await adapter.notification("cursor/update_todos", { sessionId: "parent", toolCallId: "b", merge: true, todos: [{ id: "b", content: "Write", status: "pending" }] });
+    expect(second).toMatchObject([{ payload: { revision: 2, steps: [{ body: "Read" }, { body: "Write" }] } }]);
+    await expect(adapter.request("cursor/update_todos", { sessionId: "other" })).rejects.toThrow("stale parent");
+    await expect(adapter.notification("cursor/task", { sessionId: "other" })).rejects.toThrow("stale parent");
+    await expect(adapter.request("cursor/unknown", { sessionId: "parent" })).rejects.toThrow("Unsupported");
+  });
+
+  it("requires a known child spawn and immutable origin within the active parent", async () => {
+    const context = { workspacePath: await workspace(), sessionId: "parent", turnId: "turn" };
+    const adapter = createCursorProfileExtensionAdapter(context);
+    const update = { subagentSessionId: "child", _meta: { cursor: { toolCallId: "task", agentId: "native-child", model: "small" } } };
+    const state = { ...update, sessionUpdate: "subagent_state_update", state: "completed" };
+    await expect(adapter.notification("cursor/subagent_update", { sessionId: "parent", update: state })).rejects.toThrow("no spawn");
+    const spawned = { ...update, sessionUpdate: "subagent_spawned", name: "Research", task: "Inspect source" };
+    expect(await adapter.notification("cursor/subagent_update", { sessionId: "parent", update: spawned })).toMatchObject([{ eventType: "delegation.started", payload: { children: [{ role: "Research", model: "small" }] } }]);
+    expect(await adapter.notification("cursor/subagent_update", { sessionId: "parent", update: state })).toMatchObject([{ eventType: "delegation.completed", payload: { children: [{ role: "Research", summary: "Inspect source" }] } }]);
+    await expect(adapter.notification("cursor/subagent_update", { sessionId: "other", update: state })).rejects.toThrow("stale parent");
+    await expect(adapter.notification("cursor/subagent_update", { sessionId: "parent", update: { ...state, _meta: { cursor: { ...update._meta.cursor, toolCallId: "forged" } } } })).rejects.toThrow("origin identity");
+    await expect(adapter.notification("cursor/subagent_update", { sessionId: "parent", update: spawned })).rejects.toThrow("duplicated");
+    await expect(createCursorProfileExtensionAdapter({ ...context, turnId: "next" }).notification("cursor/subagent_update", { sessionId: "parent", update: state })).rejects.toThrow("no spawn");
   });
 });

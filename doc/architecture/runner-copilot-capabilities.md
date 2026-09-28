@@ -259,8 +259,8 @@ unrelated runner integrity errors keep their original classification.
 ## Complete provider-pack proof
 
 The [retained packaged-launch evidence](../../packages/paperclip-runner/test/fixtures/copilot-provider-pack-darwin-arm64-1.0.88.json)
-records clean source revision `9288943881a3667f25b38e49728120dd45c20279`,
-provider-pack digest `sha256:4d2212dd82e5ae1bbccd36087f99576a44c98f086c65f8d98f9f470669811880`,
+records clean source revision `5d8829add09cbb970f374cc38eaa0e89a529cd91`,
+provider-pack digest `sha256:24e95269096ad78dbca0b73562e9b3810dc1e90a3608f572c021a4270f3bd34f`,
 the profile and native closure digests, and the exact protocol-1 initialize response.
 The complete pack was built with standalone Node 24.19.0. Its packaged
 `verifyAcpxProfileInstallation` registry acquired a private native command lease,
@@ -279,9 +279,21 @@ bound retry without spawning a provider during the test.
 Probe attempts are accounted for: an initial smoke client closed stdin before
 initialize completed and was corrected; a bare unauthenticated initialize then
 hit the 20-second deadline; a metadata-fixture initialize passed; the final pack
-was rebuilt with the authentication preflight and passed again. All four attempts
-were local with no credentials or inference, with $0 model and infrastructure
-spend. There was no Daytona deployment. The candidate remains unqualified.
+was rebuilt with the authentication preflight and passed again. After rebasing
+onto foundation `5aeebb20c`, the complete pack was rebuilt and the fifth initialize
+probe passed, with numeric ID 0, clean EOF, and zero fixture HTTP requests. All
+five attempts were local with no credentials or inference, with $0 model and
+infrastructure spend. There was no Daytona deployment. The candidate remains
+unqualified.
+
+Final focused checks at the source revision above passed: 72 Copilot/provider-host
+tests (including four retained-evidence cases), 11 strict builder/materializer and
+candidate-registry tests, all six Daytona image-content tests, and the runner
+TypeScript build including generated schema checks and verified sidecar bundles.
+The evidence update itself passed the four evidence cases again. The complete
+pack remains inspectable at `/tmp/paperclip-copilot-final-provider-pack-20260928`
+on the build host; the sanitized tracked fixture provides the portable proof.
+These checks do not substitute for live GitHub or product/Daytona qualification.
 
 ```sh
 /path/to/standalone/node packages/paperclip-runner/scripts/build-provider-pack.mjs /absolute/provider-pack --candidate-providers=copilot

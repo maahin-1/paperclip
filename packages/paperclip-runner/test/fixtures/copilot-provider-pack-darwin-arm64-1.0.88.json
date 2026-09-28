@@ -1,7 +1,7 @@
 {
   "schema": "paperclip.copilot-provider-pack-smoke/v1",
-  "sourceRevision": "5d8829add09cbb970f374cc38eaa0e89a529cd91",
-  "providerPackDigest": "sha256:24e95269096ad78dbca0b73562e9b3810dc1e90a3608f572c021a4270f3bd34f",
+  "sourceRevision": "9f7f0eef36d83bb889adc2144402c0b4a3b31dba",
+  "providerPackDigest": "sha256:dda55ed5d573bb5e763bc76495b251fa107d80f1a213ab1c9d26cfb81f893adb",
   "platform": "darwin",
   "architecture": "arm64",
   "candidate": {

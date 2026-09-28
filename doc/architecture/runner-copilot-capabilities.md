@@ -259,8 +259,8 @@ unrelated runner integrity errors keep their original classification.
 ## Complete provider-pack proof
 
 The [retained packaged-launch evidence](../../packages/paperclip-runner/test/fixtures/copilot-provider-pack-darwin-arm64-1.0.88.json)
-records clean source revision `5d8829add09cbb970f374cc38eaa0e89a529cd91`,
-provider-pack digest `sha256:24e95269096ad78dbca0b73562e9b3810dc1e90a3608f572c021a4270f3bd34f`,
+records clean source revision `9f7f0eef36d83bb889adc2144402c0b4a3b31dba`,
+provider-pack digest `sha256:dda55ed5d573bb5e763bc76495b251fa107d80f1a213ab1c9d26cfb81f893adb`,
 the profile and native closure digests, and the exact protocol-1 initialize response.
 The complete pack was built with standalone Node 24.19.0. Its packaged
 `verifyAcpxProfileInstallation` registry acquired a private native command lease,
@@ -274,7 +274,10 @@ authentication or model availability. The real host separately rejects absent,
 blank, or NUL-containing explicit credentials before opening a command lease;
 ambient `GH_TOKEN` and `GITHUB_TOKEN` cannot satisfy admission. A host regression
 verifies that this failure releases ownership and permits a subsequent explicitly
-bound retry without spawning a provider during the test.
+bound retry without spawning a provider during the test. The controller now mints
+a provider/session binding from explicit credential names; the sidecar rejects
+unbound ambient credentials and removes the binding before native launch.
+Caller-supplied binding markers cannot override the controller-generated value.
 
 Probe attempts are accounted for: an initial smoke client closed stdin before
 initialize completed and was corrected; a bare unauthenticated initialize then
@@ -282,18 +285,25 @@ hit the 20-second deadline; a metadata-fixture initialize passed; the final pack
 was rebuilt with the authentication preflight and passed again. After rebasing
 onto foundation `5aeebb20c`, the complete pack was rebuilt and the fifth initialize
 probe passed, with numeric ID 0, clean EOF, and zero fixture HTTP requests. All
-five attempts were local with no credentials or inference, with $0 model and
-infrastructure spend. There was no Daytona deployment. The candidate remains
-unqualified.
+five attempts were local with no credentials or inference. After the final
+foundation `f80c312cd` and Copilot review fixes, the complete pack was rebuilt
+from the source above and a sixth initialize probe passed with the same results.
+All six probes used $0 model and infrastructure spend. There was no Daytona
+deployment. The candidate remains unqualified.
 
-Final focused checks at the source revision above passed: 72 Copilot/provider-host
-tests (including four retained-evidence cases), 11 strict builder/materializer and
-candidate-registry tests, all six Daytona image-content tests, and the runner
+Final focused checks at the source revision above passed: 86 Copilot/provider-host
+and environment tests (including four retained-evidence cases), 12 strict
+builder/materializer, candidate-registry and probe-cleanup tests, all six Daytona
+image-content tests, and the runner
 TypeScript build including generated schema checks and verified sidecar bundles.
 The evidence update itself passed the four evidence cases again. The complete
-pack remains inspectable at `/tmp/paperclip-copilot-final-provider-pack-20260928`
+pack remains inspectable at `/tmp/paperclip-copilot-reviewed-provider-pack-20260928`
 on the build host; the sanitized tracked fixture provides the portable proof.
-These checks do not substitute for live GitHub or product/Daytona qualification.
+The exact Docker resolution command, seeded from the tracked lockfile, produced
+`650e23d20e967bcfbfced888e131199b9a06e66a1ba4f64cfb68383b59def4a8`, matching
+the reviewed image pin; the subsequent frozen runner install passed. Generated
+lock changes remain uncommitted. These checks do not substitute for live GitHub
+or product/Daytona qualification.
 
 ```sh
 /path/to/standalone/node packages/paperclip-runner/scripts/build-provider-pack.mjs /absolute/provider-pack --candidate-providers=copilot

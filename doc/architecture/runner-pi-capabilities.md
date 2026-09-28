@@ -115,15 +115,14 @@ installed pinned package; an absent or unpatched dependency is a failure.
 `PAPERCLIP_TEST_PI_ACP_PACKAGE` can select a separately installed pinned fixture.
 These fixtures invoke no model or paid API.
 
-At source `9c8ffa9de`, all 30 tests in those four Vitest files passed, including
-the optional actual-distribution installation test. The patched-wrapper, real-Pi,
-and distribution-builder Node suites passed all 14 tests with the exact pinned
-materialized distribution. These focused checks do not establish that full
-repository checks or PR CI pass after the final foundation rebase.
-The subsequent retry-status repair passed the same 30 Vitest tests and all 17
-Node tests, including new successful, failed, and missing-outcome retry cases.
-The failed and missing-outcome cases were observed failing against the prior
-wrapper before the repair.
+At source `f58cfa1cbf4503b93a0be4480f51b492d8203b7c`, all 30 tests in those
+four Vitest files passed, including the optional actual-distribution installation
+test. The patched-wrapper, real-Pi, and distribution-builder Node suites passed
+all 17 tests using the fresh provider-pack packages. TypeScript and the full
+candidate pack build passed. Retry cases cover successful, failed, and missing
+outcomes; the failed and missing cases were observed failing against the prior
+wrapper before the repair. These focused checks do not establish a full
+repository check or current-head CI pass.
 
 `test/pi-native-package-contract.test.mjs` runs the real Pi 0.84.2 CLI without
 credentials. It loads the compiled owned extension, initializes a loopback MCP
@@ -242,21 +241,24 @@ invalidates complete-turn token/cost totals instead of inventing complete covera
 The retained [macOS ARM64 provider-pack admission proof](../../packages/paperclip-runner/test-fixtures/pi-acp/offline-provider-pack-proof.darwin-arm64.json)
 records the exact source revision, pack/runtime hashes, declared model, and
 missing-credential result. It contains no credentials or provider session IDs and
-records zero paid calls. The current retained pack was built at
-`1e0d11c482f8ef50b6afc1430cb736579114b266`; its manifest digest is
-`sha256:f859e30e51326ff875d616e2bb3fd4c0246ce1f58a5988968b91bae176a68281`.
-It uses the integrated installation registry and immutable snapshot. The probe
-reasserted steering advertisement and missing-credential rejection; its other
-capability fields come from the earlier complete receipt for the unchanged Pi
-closure. The JSON records that distinction and the correction of a serialization
-field after the provider had closed. It supersedes the earlier pack proof from
-`e3658cd0a6d26af63d59201a47039af7e6f33510` and precedes the evidence-retention and
-the later retry-status repair. That repair changes the wrapper, all three closure
-pins, and the profile digest; the retained pack does not prove those new bytes.
-A fresh pack record is required after the final foundation rebase. The historical
-record proves packaged offline admission only; it does not
-claim live model, interaction, or Daytona qualification. Later foundation changes
-require another pack build and source-pinned admission record.
+records zero paid calls. The pack was built at
+`f58cfa1cbf4503b93a0be4480f51b492d8203b7c`, after the final foundation rebase and
+retry-status repair. Its manifest digest is
+`sha256:3de76fb7d3902d29285e3da51e36d2ba4654c29bab0c867a6209fadea77c2181`.
+The probe used the integrated installation registry and immutable snapshot. Every
+advertised capability in this record was read and asserted from that actual
+initialize response. Session creation rejected the missing bound credential;
+no model prompt was submitted. The record includes the focused checks performed
+at this source. It precedes only the evidence-retention/report commit and proves
+o authenticated interaction, model, or Daytona qualification.
+
+The [earlier integrated proof](../../packages/paperclip-runner/test-fixtures/pi-acp/offline-provider-pack-proof.1e0d11c48.darwin-arm64.json)
+retains source `1e0d11c482f8ef50b6afc1430cb736579114b266` and manifest
+`sha256:f859e30e51326ff875d616e2bb3fd4c0246ce1f58a5988968b91bae176a68281` as
+historical evidence. It has the previous wrapper/closure identity and explicitly
+records its narrower capability assertions. It is not evidence for the current
+retry-status repair. Later runtime or foundation changes require a new pack build
+and source-pinned admission record.
 
 ## Remaining event and qualification work
 

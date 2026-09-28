@@ -1,0 +1,677 @@
+diff --git a/dist/index.js b/dist/index.js
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -53,7 +53,7 @@
+
+ // src/pi-rpc/process.ts
+ import { spawn } from "child_process";
+-import * as readline from "readline";
++import { PI_ACP_FEATURES, PiRpcFrames, PiUiBridge, PiTurnUsage, createPiLaunchSpec, snapshotPiWorkspaceFile } from "./paperclip-runtime.js";
+
+ // src/pi-rpc/command.ts
+ import { platform } from "os";
+@@ -96,49 +96,38 @@
+   preludeLines = [];
+   constructor(child) {
+     this.child = child;
+-    const rl = readline.createInterface({ input: child.stdout });
+-    rl.on("line", (line) => {
+-      if (!line.trim()) return;
+-      let msg;
+-      try {
+-        msg = JSON.parse(line);
+-      } catch {
+-        const cleaned = stripAnsi(String(line)).trimEnd();
+-        if (cleaned) this.preludeLines.push(cleaned);
++    this.exited = null;
++    const fail = (error) => {
++      if (this.exited) return;
++      this.exited = error;
++      for (const [, pending] of this.pending) pending.reject(error);
++      this.pending.clear();
++      for (const handler of this.eventHandlers) handler({ type: "paperclip_process_exit" });
++    };
++    const frames = new PiRpcFrames((msg) => {
++      if (msg.type === "response") {
++        if (typeof msg.id === "string") this.pending.get(msg.id)?.resolve(msg);
+         return;
+       }
+-      if (msg?.type === "response") {
+-        const id = typeof msg.id === "string" ? msg.id : void 0;
+-        if (id) {
+-          const pending = this.pending.get(id);
+-          if (pending) {
+-            this.pending.delete(id);
+-            pending.resolve(msg);
+-            return;
+-          }
+-        }
+-      }
+-      for (const h of this.eventHandlers) h(msg);
++      for (const handler of this.eventHandlers) handler(msg);
+     });
+-    child.on("exit", (code, signal) => {
+-      const err = new Error(`pi process exited (code=${code}, signal=${signal})`);
+-      for (const [, p] of this.pending) p.reject(err);
+-      this.pending.clear();
++    child.stdout.on("data", (chunk) => {
++      try { frames.write(chunk); } catch (error) { fail(error); this.dispose("SIGKILL"); }
+     });
+-    child.on("error", (err) => {
+-      for (const [, p] of this.pending) p.reject(err);
+-      this.pending.clear();
++    child.stdout.on("end", () => {
++      try { frames.end(); } catch (error) { fail(error); }
+     });
++    child.on("exit", () => fail(new Error("Pi process exited before its next request")));
++    child.on("error", fail);
+   }
+   static async spawn(params) {
+-    const cmd = getPiCommand(params.piCommand);
+-    const args = ["--mode", "rpc", "--no-themes"];
+-    if (params.sessionPath) args.push("--session", params.sessionPath);
+-    const child = spawn(cmd, args, {
++    const launch = createPiLaunchSpec(params, process.env);
++    const cmd = launch.command;
++    const child = spawn(cmd, launch.args, {
+       cwd: params.cwd,
+       stdio: "pipe",
+-      env: process.env,
+-      shell: shouldUseShellForPiCommand(cmd)
++      env: launch.env,
++      shell: false
+     });
+     try {
+       await new Promise((resolve4, reject) => {
+@@ -181,21 +170,30 @@
+         const { dirname: dirname3 } = await import("path");
+         mkdirSync2(dirname3(sessionFile), { recursive: true });
+       }
+-    } catch {
++      const commands = await proc.getCommands();
++      if (!Array.isArray(commands?.commands) || !commands.commands.some((command) => command.name === "paperclip-runtime-ready-v1" && command.description === "Paperclip runtime gate v1")) throw new Error("Pi owned runtime extension did not initialize");
++    } catch (error) {
++      proc.dispose("SIGKILL");
++      throw new PiRpcSpawnError("Pi owned runtime extension failed admission", { cause: error });
+     }
+     return proc;
+   }
+   onEvent(handler) {
+     this.eventHandlers.push(handler);
++    if (this.exited) queueMicrotask(() => handler({ type: "paperclip_process_exit" }));
+     return () => {
+       this.eventHandlers = this.eventHandlers.filter((h) => h !== handler);
+     };
+   }
+   dispose(signal = "SIGTERM") {
+-    if (this.child.killed) return;
+-    try {
+-      this.child.kill(signal);
+-    } catch {
++    if (this.child.exitCode !== null || this.child.signalCode !== null) return;
++    try { this.child.stdin.end(); this.child.kill(signal); } catch {}
++    if (signal !== "SIGKILL") {
++      const timer = setTimeout(() => {
++        if (this.child.exitCode === null && this.child.signalCode === null) this.child.kill("SIGKILL");
++      }, 2000);
++      timer.unref();
++      this.child.once("exit", () => clearTimeout(timer));
+     }
+   }
+   /**
+@@ -288,12 +286,17 @@
+     const withId = { ...cmd, id };
+     const line = `${JSON.stringify(withId)}
+ `;
++    if (this.exited) return Promise.reject(this.exited);
+     return new Promise((resolve4, reject) => {
+-      this.pending.set(id, { resolve: resolve4, reject });
+-      void this.writeLine(line).catch((error) => {
+-        this.pending.delete(id);
+-        reject(error);
+-      });
++      const timer = setTimeout(() => finish(new Error("Pi RPC request timed out")), 30000);
++      timer.unref();
++      const finish = (error, value) => {
++        if (!this.pending.delete(id)) return;
++        clearTimeout(timer);
++        if (error) reject(error); else resolve4(value);
++      };
++      this.pending.set(id, { resolve: (value) => finish(null, value), reject: (error) => finish(error) });
++      void this.writeLine(line).catch((error) => finish(error));
+     });
+   }
+   writeLine(line) {
+@@ -714,6 +717,7 @@
+     try {
+       proc = await PiRpcProcess.spawn({
+         cwd: params.cwd,
++        mcpServers: params.mcpServers,
+         piCommand: params.piCommand
+       });
+     } catch (e) {
+@@ -808,6 +812,9 @@
+     this.proc = opts.proc;
+     this.conn = opts.conn;
+     this.fileCommands = opts.fileCommands ?? [];
++    this.uiBridge = new PiUiBridge(this.sessionId, this.conn, this.proc);
++    this.turnUsage = new PiTurnUsage();
++    this.turnEpoch = 0;
+     this.proc.onEvent((ev) => this.handlePiEvent(ev));
+   }
+   setStartupInfo(text) {
+@@ -852,6 +859,7 @@
+   }
+   async cancel() {
+     this.cancelRequested = true;
++    this.uiBridge.cancelAll();
+     if (this.turnQueue.length) {
+       const queued = this.turnQueue.splice(0, this.turnQueue.length);
+       for (const t of queued) t.resolve("cancelled");
+@@ -920,12 +928,16 @@
+     this.cancelRequested = false;
+     this.inAgentLoop = false;
+     this.pendingTurn = { resolve: t.resolve, reject: t.reject };
++    const epoch = ++this.turnEpoch;
++    this.turnUsage.reset();
+     this.emit({
+       sessionUpdate: "session_info_update",
+       _meta: { piAcp: { queueDepth: this.turnQueue.length, running: true } }
+     });
+     this.proc.prompt(t.message, t.images).catch((err) => {
+       void this.flushEmits().finally(() => {
++        if (epoch !== this.turnEpoch || !this.pendingTurn) return;
++        this.uiBridge.cancelAll();
+         const authErr = maybeAuthRequiredError(err);
+         if (authErr) {
+           this.pendingTurn?.reject(authErr);
+@@ -946,6 +958,23 @@
+   handlePiEvent(ev) {
+     const type = String(ev.type ?? "");
+     switch (type) {
++      case "paperclip_process_exit": {
++        this.uiBridge.cancelAll();
++        this.pendingTurn?.reject(new Error("Pi provider process exited"));
++        this.pendingTurn = null;
++        for (const turn of this.turnQueue.splice(0)) turn.reject(new Error("Pi provider process exited"));
++        this.turnEpoch += 1;
++        break;
++      }
++      case "message_end": {
++        try { this.turnUsage.accept(ev.message); } catch {
++          this.pendingTurn?.reject(new Error("Pi usage receipt is invalid"));
++          this.pendingTurn = null;
++          this.uiBridge.cancelAll();
++          this.proc.dispose("SIGKILL");
++        }
++        break;
++      }
+       case "message_update": {
+         const ame = ev.assistantMessageEvent;
+         if (ame?.type === "text_delta" && typeof ame.delta === "string") {
+@@ -1047,7 +1076,7 @@
+           if (p) {
+             try {
+               const abs = isAbsolute(p) ? p : resolvePath(this.cwd, p);
+-              snapshotOldText = readFileSync3(abs, "utf8");
++              snapshotOldText = snapshotPiWorkspaceFile(this.cwd, abs);
+               this.fileSnapshots.set(toolCallId, { path: p, oldText: snapshotOldText });
+               if (toolName === "edit") {
+                 for (const needle of getEditOldTexts(args)) {
+@@ -1125,7 +1154,7 @@
+         if (!isError && snapshot) {
+           try {
+             const abs = isAbsolute(snapshot.path) ? snapshot.path : resolvePath(this.cwd, snapshot.path);
+-            const newText = readFileSync3(abs, "utf8");
++            const newText = snapshotPiWorkspaceFile(this.cwd, abs);
+             if (snapshot.oldText === null || newText !== snapshot.oldText) {
+               hasStructuredDiff = true;
+               content = [
+@@ -1154,14 +1183,11 @@
+         break;
+       }
+       case "extension_ui_request": {
+-        void this.handleExtensionUiRequest(ev).catch(() => {
+-          const id = stringProp(ev, "id");
+-          if (!id) {
+-            return;
+-          }
+-          void this.proc.sendExtensionUiResponse({ id, cancelled: true }).catch(() => {
+-          });
++        if (ev.method === "notify") this.emit({
++          sessionUpdate: "session_info_update",
++          _meta: { paperclipPi: { notice: { message: typeof ev.message === "string" ? ev.message.slice(0, 4096) : "Pi notification", level: ev.notifyType } } }
+         });
++        void this.uiBridge.handle(ev).catch(() => { this.proc.dispose("SIGKILL"); });
+         break;
+       }
+       case "auto_retry_start": {
+@@ -1210,9 +1236,12 @@
+         break;
+       }
+       case "agent_settled": {
++        const epoch = this.turnEpoch;
+         void this.flushEmits().finally(() => {
++          if (epoch !== this.turnEpoch || !this.pendingTurn) return;
++          this.uiBridge.cancelAll();
+           const reason = this.cancelRequested ? "cancelled" : "end_turn";
+-          this.pendingTurn?.resolve(reason);
++          this.pendingTurn?.resolve({ stopReason: reason, ...this.turnUsage.response() });
+           this.pendingTurn = null;
+           this.inAgentLoop = false;
+           const next = this.turnQueue.shift();
+@@ -1725,6 +1754,7 @@
+   return process.env.PI_CODING_AGENT_DIR ? resolve3(process.env.PI_CODING_AGENT_DIR) : join4(homedir4(), ".pi", "agent");
+ }
+ function getEnableSkillCommands(cwd) {
++  if (process.env.PAPERCLIP_ACPX_ISOLATED_CONTEXT === "1") return true;
+   const merged = getMergedSettings(cwd);
+   const direct = merged.enableSkillCommands;
+   if (typeof direct === "boolean") return direct;
+@@ -1733,6 +1763,7 @@
+   return true;
+ }
+ function getQuietStartup(cwd) {
++  if (process.env.PAPERCLIP_ACPX_ISOLATED_CONTEXT === "1") return true;
+   const merged = getMergedSettings(cwd);
+   const direct = merged.quietStartup;
+   if (typeof direct === "boolean") return direct;
+@@ -1884,11 +1915,13 @@
+         throw RequestError3.invalidParams(`Unknown sessionId: ${sessionId}`);
+       }
+       const cwd = opts?.cwd ?? stored.cwd;
++      if (cwd !== stored.cwd || !opts) throw RequestError3.invalidParams("Pi recovery requires session/load in the original workspace");
+       let proc;
+       try {
+         proc = await PiRpcProcess.spawn({
+           cwd,
+           sessionPath: stored.sessionFile,
++          mcpServers: opts?.mcpServers ?? [],
+           piCommand: process.env.PI_ACP_PI_COMMAND
+         });
+       } catch (e) {
+@@ -1897,7 +1930,7 @@
+         }
+         throw e;
+       }
+-      const fileCommands = loadSlashCommands(cwd);
++      const fileCommands = [];
+       const session = this.sessions.getOrCreate(sessionId, {
+         cwd,
+         mcpServers: opts?.mcpServers ?? [],
+@@ -1917,6 +1950,7 @@
+     }
+   }
+   async initialize(params) {
++    if (process.env.PAPERCLIP_ACPX_ISOLATED_CONTEXT !== "1") throw RequestError3.invalidParams("Pi requires a qualified Paperclip launch");
+     const supportedVersion = 1;
+     const requested = params.protocolVersion;
+     return {
+@@ -1933,7 +1967,8 @@
+       }),
+       agentCapabilities: {
+         loadSession: true,
+-        mcpCapabilities: { http: false, sse: false },
++        mcpCapabilities: { http: true, sse: false },
++        _meta: { paperclipPi: PI_ACP_FEATURES },
+         promptCapabilities: {
+           image: true,
+           audio: false,
+@@ -1942,8 +1977,7 @@
+         sessionCapabilities: {
+           // **UNSTABLE** ACP capability used by Zed's codex-acp adapter.
+           // Enables a native session picker in clients that support it.
+-          list: {},
+-          delete: {}
++          list: {}
+         }
+       }
+     };
+@@ -1953,7 +1987,7 @@
+       throw RequestError3.invalidParams(`cwd must be an absolute path: ${params.cwd}`);
+     }
+     this.lastSessionCwd = params.cwd;
+-    const fileCommands = loadSlashCommands(params.cwd);
++    const fileCommands = [];
+     const enableSkillCommands = getEnableSkillCommands(params.cwd);
+     const session = await this.sessions.create({
+       cwd: params.cwd,
+@@ -2066,6 +2100,8 @@
+     const session = await this.restoreSession(params.sessionId);
+     const { message, images } = promptToPiMessage(params.prompt);
+     if (images.length === 0 && message.trimStart().startsWith("/")) {
++      const command = message.trim().split(/\s+/)[0];
++      if (!["/compact", "/session", "/autocompact"].includes(command)) throw RequestError3.invalidParams("Pi slash command is not admitted by Paperclip Runner");
+       const trimmed = message.trim();
+       const space = trimmed.indexOf(" ");
+       const cmd = space === -1 ? trimmed.slice(1) : trimmed.slice(1, space);
+@@ -2432,8 +2468,18 @@
+       }
+     }
+     const result = await session.prompt(message, images);
+-    const stopReason = result === "error" ? session.wasCancelRequested() ? "cancelled" : "end_turn" : result;
+-    return { stopReason };
++    if (result && typeof result === "object") return result;
++    if (result === "error") throw RequestError3.internalError({}, "Pi prompt failed");
++    return { stopReason: result };
++  }
++  async extMethod(method, params) {
++    if (method !== "pi/steer" && method !== "pi/follow_up") throw RequestError3.methodNotFound(method);
++    if (typeof params.sessionId !== "string" || typeof params.message !== "string" || !params.message.trim() || Buffer.byteLength(params.message) > 65536) throw RequestError3.invalidParams("Invalid Pi continuation");
++    const session = this.sessions.maybeGet(params.sessionId);
++    if (!session?.pendingTurn || session.cancelRequested) throw RequestError3.invalidParams("Pi continuation requires an active turn");
++    const response = await session.proc.request({ type: method === "pi/steer" ? "steer" : "follow_up", message: params.message });
++    if (!response.success) throw RequestError3.internalError({}, "Pi continuation was rejected");
++    return { accepted: true, sessionId: session.sessionId, kind: method === "pi/steer" ? "steer" : "follow_up" };
+   }
+   async cancel(params) {
+     const session = this.sessions.maybeGet(params.sessionId);
+@@ -2473,7 +2519,7 @@
+       mcpServers: params.mcpServers
+     });
+     const proc = session.proc;
+-    const fileCommands = loadSlashCommands(params.cwd);
++    const fileCommands = [];
+     this.sessions.closeAllExcept?.(session.sessionId);
+     this.store.upsert({
+       sessionId: params.sessionId,
+@@ -2607,6 +2653,7 @@
+     return response;
+   }
+   async deleteSession(params) {
++    throw RequestError3.methodNotFound("session/delete");
+     const stored = this.store.get(params.sessionId);
+     const piSession = findPiSession(params.sessionId);
+     if (!stored && !piSession) {
+@@ -2828,6 +2875,7 @@
+   return 0;
+ }
+ function buildUpdateNotice() {
++  if (process.env.PAPERCLIP_ACPX_ISOLATED_CONTEXT === "1") return null;
+   try {
+     const piVersion = spawnSync("pi", ["--version"], { encoding: "utf-8" });
+     const installed = (String(piVersion.stdout ?? "").trim() || String(piVersion.stderr ?? "").trim()).replace(
+@@ -2848,6 +2896,7 @@
+   }
+ }
+ function buildStartupInfo(opts) {
++  if (process.env.PAPERCLIP_ACPX_ISOLATED_CONTEXT === "1") return "";
+   void opts.fileCommands;
+   const md = [];
+   try {
+@@ -2980,6 +3029,7 @@
+
+ // src/index.ts
+ if (process.argv.includes("--terminal-login")) {
++  throw new Error("Interactive Pi authentication is not available in Paperclip Runner");
+   const { spawnSync: spawnSync2 } = await import("child_process");
+   const cmd = getPiCommand(process.env.PI_ACP_PI_COMMAND);
+   const res = spawnSync2(cmd, [], {
+@@ -3019,11 +3069,12 @@
+   }
+ });
+ var stream = ndJsonStream(input, output);
+-var agent = new AgentSideConnection((conn) => new PiAcpAgent(conn), stream);
++var ownedPiAgent;
++var agent = new AgentSideConnection((conn) => (ownedPiAgent = new PiAcpAgent(conn)), stream);
+ function shutdown() {
+   try {
+     ;
+-    agent?.agent?.dispose?.();
++    ownedPiAgent?.dispose?.();
+   } catch {
+   }
+   try {
+diff --git a/dist/paperclip-runtime.js b/dist/paperclip-runtime.js
+new file mode 100644
+--- /dev/null
++++ b/dist/paperclip-runtime.js
+@@ -0,0 +1,248 @@
++/** Source for the helper embedded in patches/pi-acp@0.0.33.patch. */
++import { StringDecoder } from "node:string_decoder";
++import { isAbsolute, relative, resolve, sep } from "node:path";
++import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync } from "node:fs";
++
++const PERMISSION_PREFIX = "paperclip.pi.permission.v1:";
++const PERMISSION_CHOICES = [
++  { optionId: "allow_once", name: "Allow once", kind: "allow_once" },
++  { optionId: "allow_always", name: "Allow for this session", kind: "allow_always" },
++  { optionId: "reject_once", name: "Deny", kind: "reject_once" },
++];
++
++function record(value         )              {
++  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid Pi runtime record");
++  return value               ;
++}
++function text(value         , max = 16_384)         {
++  if (typeof value !== "string" || Buffer.byteLength(value) > max) throw new Error("Invalid Pi runtime text");
++  return value;
++}
++
++export const PI_ACP_FEATURES = Object.freeze({
++  version: 1, steering: true, queuedFollowUp: true,
++  questions: ["select", "confirm", "input", "editor"],
++  nativePermissions: true, promptUsage: true, nativePlan: false,
++  pendingRequestRecovery: "live-process-only",
++});
++
++/** Strict LF framing: Unicode line separators inside JSON are ordinary text. */
++export class PiRpcFrames {
++          decoder = new StringDecoder("utf8");
++          pending = "";
++                   receive                              ;
++                   limit        ;
++  constructor(receive                              , limit = 4 * 1024 * 1024) { this.receive = receive; this.limit = limit; }
++  write(chunk            )       {
++    this.pending += this.decoder.write(Buffer.from(chunk));
++    for (;;) {
++      const index = this.pending.indexOf("\n");
++      if (index < 0) break;
++      const line = this.pending.slice(0, index).replace(/\r$/, "");
++      this.pending = this.pending.slice(index + 1);
++      if (Buffer.byteLength(line) > this.limit) throw new Error("Pi RPC frame exceeds its bound");
++      if (line.trim()) this.receive(record(JSON.parse(line)));
++    }
++    if (Buffer.byteLength(this.pending) > this.limit) throw new Error("Pi RPC frame exceeds its bound");
++  }
++  end()       {
++    this.pending += this.decoder.end();
++    if (this.pending.trim()) throw new Error("Pi RPC stream ended inside a frame");
++  }
++}
++
++function requiredFile(environment                   , name        )         {
++  const path = environment[name];
++  if (!path || !isAbsolute(path) || /[\0\r\n]/.test(path)) throw new Error(`Missing verified Pi launch binding: ${name}`);
++  // This checks the handoff shape. The runner command lease verifies all bytes,
++  // retains their directory identity, and owns the subprocess lifetime.
++  if (!lstatSync(path).isFile()) throw new Error(`Invalid verified Pi launch binding: ${name}`);
++  return path;
++}
++function pathArray(raw                    )           {
++  const paths          = JSON.parse(raw ?? "[]");
++  if (!Array.isArray(paths) || paths.length > 128 || paths.some((p) => typeof p !== "string" || !isAbsolute(p) || /[\0\r\n]/.test(p))) throw new Error("Invalid Pi runtime paths");
++  return paths;
++}
++
++/** Provider tool events are untrusted; diff projection cannot read host files. */
++export function snapshotPiWorkspaceFile(cwd        , path        , environment                    = process.env)         {
++  const root = realpathSync(cwd);
++  const logical = resolve(root, path);
++  const physical = realpathSync(logical);
++  const within = (base        , target        )          => {
++    const suffix = relative(base, target);
++    return !isAbsolute(suffix) && suffix !== ".." && !suffix.startsWith(`..${sep}`);
++  };
++  if (!within(root, logical) || !within(root, physical)) throw new Error("Pi diff escaped its workspace");
++  for (const protectedPath of pathArray(environment.PAPERCLIP_PI_PROTECTED_ROOTS)) {
++    if (within(protectedPath, logical)) throw new Error("Pi diff targets protected state");
++    let protectedPhysical        ;
++    try { protectedPhysical = realpathSync(protectedPath); } catch { continue; }
++    if (within(protectedPhysical, physical)) throw new Error("Pi diff targets protected state");
++  }
++  const fd = openSync(physical, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
++  try {
++    const before = fstatSync(fd, { bigint: true });
++    if (!before.isFile() || before.nlink !== 1n || before.size > 4n * 1024n * 1024n) throw new Error("Pi diff file is unsupported");
++    const result = readFileSync(fd, "utf8");
++    const after = fstatSync(fd, { bigint: true });
++    const named = lstatSync(physical, { bigint: true });
++    if (before.ino !== after.ino || before.dev !== after.dev || before.size !== after.size || before.ctimeNs !== after.ctimeNs || named.ino !== before.ino || named.dev !== before.dev || realpathSync(logical) !== physical) throw new Error("Pi diff file changed during capture");
++    return result;
++  } finally { closeSync(fd); }
++}
++
++export function createPiLaunchSpec(
++  params                                                               ,
++  environment                   ,
++)                                                              {
++  if (environment.PAPERCLIP_ACPX_ISOLATED_CONTEXT !== "1") throw new Error("Pi requires an isolated runner launch");
++  const command = requiredFile(environment, "PAPERCLIP_PI_NODE_EXECUTABLE");
++  const entrypoint = requiredFile(environment, "PAPERCLIP_PI_ENTRYPOINT");
++  const extension = requiredFile(environment, "PAPERCLIP_PI_EXTENSION_PATH");
++  if (environment.PAPERCLIP_PI_READ_ONLY !== "0" && environment.PAPERCLIP_PI_READ_ONLY !== "1") throw new Error("Pi requires an explicit read-only policy");
++  const readRoots = pathArray(environment.PAPERCLIP_PI_READ_ROOTS);
++  const protectedRoots = pathArray(environment.PAPERCLIP_PI_PROTECTED_ROOTS);
++  const workspace = realpathSync(params.cwd);
++  const configuration = JSON.stringify({
++    workspace, servers: params.mcpServers ?? [],
++    readOnly: environment.PAPERCLIP_PI_READ_ONLY === "1",
++    readRoots, protectedRoots,
++    instructions: environment.PAPERCLIP_PI_SYSTEM_INSTRUCTIONS ?? "",
++  });
++  if (Buffer.byteLength(configuration) > 64 * 1024) throw new Error("Pi launch configuration exceeds its bound");
++  const args = [entrypoint, "--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve", "--offline", "-e", extension];
++  for (const root of readRoots) args.push("--skill", root);
++  if (params.sessionPath) {
++    const home = environment.PI_CODING_AGENT_DIR;
++    if (!home) throw new Error("Pi session home is missing");
++    const sessionRoot = realpathSync(resolve(home, "sessions"));
++    const sessionPath = realpathSync(params.sessionPath);
++    const suffix = relative(sessionRoot, sessionPath);
++    if (!suffix || isAbsolute(suffix) || suffix === ".." || suffix.startsWith(`..${sep}`) || !lstatSync(params.sessionPath).isFile()) throw new Error("Pi session escaped its private home");
++    args.push("--session", sessionPath);
++  }
++  return { command, args, env: { ...environment, PAPERCLIP_PI_RUNTIME_CONFIGURATION: configuration } };
++}
++
++
++
++
++
++
++
++/** Live promises never become authority to replay an answer after provider death. */
++export class PiUiBridge {
++                   pending = new Map                            ();
++                   seen = new Set        ();
++                   sessionId        ;
++                   connection              ;
++                   process           ;
++  constructor(sessionId        , connection              , process           ) { this.sessionId = sessionId; this.connection = connection; this.process = process; }
++
++  cancelAll()       { for (const value of this.pending.values()) value.cancel(); }
++
++  async handle(event             )                {
++    const id = text(event.id, 256);
++    const method = text(event.method, 64);
++    if (!["select", "confirm", "input", "editor"].includes(method)) return;
++    if (this.seen.has(id)) return;
++    if (this.seen.size >= 4096) throw new Error("Pi UI request history exceeds its bound");
++    this.seen.add(id);
++    let done = false;
++    let timeout                                           ;
++    const finish = async (response             )                => {
++      if (done) return;
++      done = true;
++      if (timeout) clearTimeout(timeout);
++      this.pending.delete(id);
++      await this.process.sendExtensionUiResponse({ id, ...response });
++    };
++    this.pending.set(id, { cancel: () => { void finish({ cancelled: true }).catch(() => {}); } });
++    if (typeof event.timeout === "number" && Number.isFinite(event.timeout)) {
++      timeout = setTimeout(() => { void finish({ cancelled: true }).catch(() => {}); }, Math.max(0, Math.min(event.timeout, 2_147_483_647)));
++      timeout.unref?.();
++    }
++    try {
++      const title = text(event.title ?? "Additional information needed", 65_536);
++      if (method === "select" && title.startsWith(PERMISSION_PREFIX)) {
++        const permission = record(JSON.parse(title.slice(PERMISSION_PREFIX.length)));
++        const toolCallId = text(permission.toolCallId, 256);
++        const toolName = text(permission.toolName, 128);
++        const input = record(permission.input);
++        const result = record(await this.connection.requestPermission({
++          sessionId: this.sessionId,
++          toolCall: { toolCallId, title: `Pi ${toolName}`, kind: toolName === "bash" ? "execute" : ["write", "edit"].includes(toolName) ? "edit" : "read", status: "pending", rawInput: input },
++          options: PERMISSION_CHOICES,
++        }));
++        const outcome = record(result.outcome);
++        const selected = outcome.outcome === "selected" ? PERMISSION_CHOICES.find((option) => option.optionId === outcome.optionId) : undefined;
++        await finish(selected ? { value: selected.name } : { cancelled: true });
++        return;
++      }
++      const property              = { type: method === "confirm" ? "boolean" : "string", title };
++      if (method === "select") {
++        if (!Array.isArray(event.options) || event.options.length < 1 || event.options.length > 128) throw new Error("Invalid Pi question options");
++        property.enum = event.options.map((option) => text(option, 4096));
++        if (new Set(property.enum            ).size !== event.options.length) throw new Error("Ambiguous Pi question options");
++      }
++      if (method === "input" && typeof event.placeholder === "string") property.description = text(event.placeholder);
++      if (method === "editor" && typeof event.prefill === "string") property.default = text(event.prefill);
++      const result = record(await this.connection.unstable_createElicitation({
++        sessionId: this.sessionId, mode: "form", message: typeof event.message === "string" ? text(event.message) : title,
++        requestedSchema: { type: "object", title, properties: { answer: property }, required: ["answer"] },
++        _meta: { paperclipPi: { version: 1, requestId: id, method } },
++      }));
++      if (result.action !== "accept") { await finish({ cancelled: true }); return; }
++      const answer = record(result.content).answer;
++      if (method === "confirm") {
++        if (typeof answer !== "boolean") throw new Error("Invalid Pi confirmation response");
++        await finish({ confirmed: answer });
++      } else {
++        const value = text(answer, 65_536);
++        if (method === "select" && !(property.enum            ).includes(value)) throw new Error("Invalid Pi question response");
++        await finish({ value });
++      }
++    } catch { await finish({ cancelled: true }).catch(() => {}); }
++  }
++}
++
++/** Sum actual assistant receipts, never context occupancy or estimated cost. */
++export class PiTurnUsage {
++          seen = new Set        ();
++          total = { inputTokens: 0, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0, totalTokens: 0 };
++          cost = 0;
++          failed = false;
++          observed = false;
++  reset()       { this.seen.clear(); this.total = { inputTokens: 0, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0, totalTokens: 0 }; this.cost = 0; this.failed = false; this.observed = false; }
++  accept(value         )       {
++    const message = record(value);
++    if (message.role !== "assistant") return;
++    this.failed = message.stopReason === "error";
++    if (!message.usage || typeof message.usage !== "object") return;
++    const key = JSON.stringify([message.timestamp, message.id, message.usage, message.content]);
++    if (this.seen.has(key)) return;
++    if (this.seen.size >= 8192) throw new Error("Pi usage receipts exceed their bound");
++    this.seen.add(key);
++    const usage = record(message.usage);
++    const numbers = ["input", "output", "cacheRead", "cacheWrite"].map((name) => usage[name] ?? 0);
++    if (numbers.some((value) => typeof value !== "number" || !Number.isSafeInteger(value) || value < 0)) return;
++    this.observed = true;
++    for (const [index, field] of ["inputTokens", "outputTokens", "cachedReadTokens", "cachedWriteTokens"].entries()) {
++      const name = field                           ;
++      this.total[name] += numbers[index]          ;
++    }
++    this.total.totalTokens = this.total.inputTokens + this.total.outputTokens + this.total.cachedReadTokens + this.total.cachedWriteTokens;
++    if (usage.cost && typeof usage.cost === "object") {
++      const cost = record(usage.cost).total;
++      if (typeof cost === "number" && Number.isFinite(cost) && cost >= 0) this.cost += cost;
++    }
++  }
++  response()              {
++    return {
++      ...(this.observed ? { usage: { ...this.total, _meta: { paperclipPi: { provenance: "assistant_message_receipts", costUsd: this.cost } } } } : {}),
++      ...(this.failed ? { _meta: { jetbrains: { air: { version: 1, sessionFailure: { severity: "error", category: "service", title: "Pi provider request failed" } } } } } : {}),
++    };
++  }
++}

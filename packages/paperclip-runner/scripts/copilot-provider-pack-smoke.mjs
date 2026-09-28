@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
+import { createServer } from "node:http";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -16,20 +17,32 @@ process.env.PAPERCLIP_ACPX_PROVIDER_PACKAGE_MANIFEST = join(pack, "package.json"
 const candidate = manifest.payload.candidateProviders?.copilot;
 assert.equal(candidate?.version, "1.0.88");
 assert.equal(candidate.qualification, "pending");
-const { verifyAcpxProfileInstallation } = await import(pathToFileURL(join(pack, "dist/drivers/acpx/profile-installation.js")));
+const { assertAcpxProfileEnvironment, verifyAcpxProfileInstallation } = await import(pathToFileURL(join(pack, "dist/drivers/acpx/profile-installation.js")));
 const { resolveQualifiedAcpxProfile } = await import(pathToFileURL(join(pack, "dist/drivers/acpx/qualified-profiles.js")));
 const { COPILOT_ACP_CLIENT_CAPABILITIES } = await import(pathToFileURL(join(pack, "dist/drivers/acpx/copilot-events.js")));
 // This explicit value exercises profile admission only; no model is selected
 // or used by initialize, and this is not a claim of model availability.
 const profile = resolveQualifiedAcpxProfile("copilot", "gpt-4.1");
+assert.throws(() => assertAcpxProfileEnvironment("copilot", {}), { code: "COPILOT_AUTH_REQUIRED" });
 const installation = await verifyAcpxProfileInstallation(profile);
 assert.equal(installation.commandDigest, candidate.profileDigest);
 const lease = await installation.openCommand();
 const root = await mkdtemp(join(tmpdir(), "paperclip-copilot-pack-smoke-"));
 let child;
 let exited;
+const fixtureRequests = [];
+const fixture = createServer((request, response) => {
+  fixtureRequests.push({ method: request.method, path: request.url?.split("?")[0] });
+  response.writeHead(request.method === "GET" ? 200 : 503, { "content-type": "application/json" });
+  response.end(JSON.stringify(request.method === "GET" ? { object: "list", data: [{ id: "gpt-4.1", object: "model", owned_by: "fixture" }] } : { error: "This initialize-only fixture cannot run inference" }));
+});
+fixture.listen(0, "127.0.0.1");
+await once(fixture, "listening");
 try {
-  const environment = { PATH: "/usr/bin:/bin", COPILOT_OFFLINE: "true", COPILOT_AUTO_UPDATE: "false", NO_COLOR: "1" };
+  const environment = { PATH: "/usr/bin:/bin", COPILOT_OFFLINE: "true", COPILOT_AUTO_UPDATE: "false", NO_COLOR: "1",
+    COPILOT_PROVIDER_BASE_URL: `http://127.0.0.1:${fixture.address().port}`, COPILOT_PROVIDER_TYPE: "openai",
+    COPILOT_PROVIDER_MODEL_ID: "gpt-4.1", COPILOT_MODEL: "gpt-4.1",
+  };
   for (const name of ["HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "COPILOT_HOME", "COPILOT_CACHE_HOME"]) {
     environment[name] = join(root, name.toLowerCase());
     await mkdir(environment[name], { mode: 0o700 });
@@ -39,11 +52,12 @@ try {
   exited = once(child, "exit");
   const initialized = new Promise((done, reject) => {
     let buffer = "";
+    let stderr = "";
     let total = 0;
-    const timeout = setTimeout(() => reject(new Error("Copilot ACP initialize timed out")), 20_000);
+    const timeout = setTimeout(() => reject(new Error(`Copilot ACP initialize timed out: ${stderr.replaceAll(root, "/fixture/workspace").replaceAll(pack, "/fixture/provider-pack").slice(0, 4000)}`)), 20_000);
     timeout.unref();
     child.once("error", reject);
-    child.once("exit", () => reject(new Error("Copilot exited before initialize")));
+    child.once("exit", () => reject(new Error(`Copilot exited before initialize: ${stderr.replaceAll(root, "/fixture/workspace").replaceAll(pack, "/fixture/provider-pack").slice(0, 4000)}`)));
     child.stdout.on("data", chunk => {
       total += chunk.length;
       if (total > 1024 * 1024) { reject(new Error("Copilot ACP output exceeded bound")); return; }
@@ -61,7 +75,7 @@ try {
         }
       }
     });
-    child.stderr.resume(); // Never persist diagnostics that may contain paths.
+    child.stderr.on("data", chunk => { stderr = (stderr + chunk.toString("utf8")).slice(-16_384); });
   });
   child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: 1, clientInfo: { name: "paperclip-pack-offline-smoke", version: "1" }, clientCapabilities: COPILOT_ACP_CLIENT_CAPABILITIES } })}\n`);
   const result = await initialized;
@@ -73,14 +87,17 @@ try {
   clearTimeout(timer);
   assert.equal(exitCode, 0, "Copilot did not exit cleanly after stdin EOF");
   assert.equal(signal, null);
+  assert.equal(fixtureRequests.some(request => request.method !== "GET"), false, "Unexpected model inference request");
+  const safeInitialize = JSON.parse(JSON.stringify(result, (key, value) =>
+    key === "command" && typeof value === "string" && value.endsWith("/distribution/copilot") ? "/fixture/verified/copilot" : value));
   const executable = await readFile(join(pack, candidate.path, "copilot"));
   process.stdout.write(`${JSON.stringify({
     schema: "paperclip.copilot-provider-pack-smoke/v1", sourceRevision: manifest.payload.runnerSourceRevision,
     providerPackDigest: manifest.digest, platform: process.platform, architecture: process.arch,
     candidate, executableSha256: `sha256:${createHash("sha256").update(executable).digest("hex")}`,
     registryLaunch: "verifyAcpxProfileInstallation/openCommand/spawn", initializeRequestId: 0,
-    initialize: result, cleanExit: true, inheritedCredentials: false, promptSent: false,
-    networkMode: "COPILOT_OFFLINE=true", costUsd: 0,
+    initialize: safeInitialize, missingCredentialPreflight: "COPILOT_AUTH_REQUIRED", cleanExit: true, inheritedCredentials: false, promptSent: false,
+    networkMode: "COPILOT_OFFLINE=true; loopback metadata-only provider", fixtureRequests, protocolFixtureModel: "gpt-4.1 (not a qualified GitHub model)", costUsd: 0,
     qualification: "pending: no credential, entitlement, model execution or Daytona",
   }, null, 2)}\n`);
 } finally {
@@ -89,6 +106,8 @@ try {
     child.kill("SIGTERM");
     await within(exited, 5_000);
   }
+  fixture.closeAllConnections();
+  await new Promise(resolve => fixture.close(resolve));
   await lease.close();
   await rm(root, { recursive: true, force: true });
 }

@@ -1,4 +1,4 @@
-import { classifyCopilotFailure } from "./copilot-profile.js";
+import { assertCopilotCredentials, classifyCopilotFailure } from "./copilot-profile.js";
 import { verifyCopilotInstallation } from "./copilot-installation.js";
 import type { QualifiedAcpxAgent, QualifiedAcpxProfile } from "./qualified-profiles.js";
 import { verifyQualifiedAcpxInstallation, type VerifiedAcpxInstallation } from "./installation-integrity.js";
@@ -15,8 +15,10 @@ export async function verifyAcpxProfileInstallation(profile: QualifiedAcpxProfil
 /** Provider policy admission is repeated immediately before each process launch. */
 export async function assertAcpxProfileWorkspace(_agent: QualifiedAcpxAgent, _workspace: string): Promise<void> {}
 
-/** Candidate branches validate only explicitly bound, sanitized launch credentials. */
-export function assertAcpxProfileEnvironment(_agent: QualifiedAcpxAgent, _environment: Readonly<NodeJS.ProcessEnv>): void {}
+/** Called with the sanitized launch environment, never ambient process.env. */
+export function assertAcpxProfileEnvironment(agent: QualifiedAcpxAgent, environment: Readonly<NodeJS.ProcessEnv>): void {
+  if (agent === "copilot") assertCopilotCredentials(environment);
+}
 
 /** Provider admission diagnostics expose no raw provider strings or credentials. */
 export function classifyAcpxProfileError(agent: QualifiedAcpxAgent, error: unknown): Error | null {

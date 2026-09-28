@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { CanonicalProviderEvent } from "../../provider-events.js";
 import { COPILOT_ACP_CLIENT_CAPABILITIES, COPILOT_ACP_EVENT_METHOD } from "./copilot-events.js";
 import { acpxProfileClientCapabilities, bindAcpxExtensionTurn, createAcpxProfileExtensionAdapter } from "./profile-extensions.js";
-import { classifyAcpxProfileError, verifyAcpxProfileInstallation } from "./profile-installation.js";
+import { assertAcpxProfileEnvironment, classifyAcpxProfileError, verifyAcpxProfileInstallation } from "./profile-installation.js";
 import { resolveQualifiedAcpxProfile } from "./qualified-profiles.js";
 import { verifyCopilotInstallation } from "./copilot-installation.js";
 
@@ -10,6 +10,13 @@ vi.mock("./copilot-installation.js", () => ({ verifyCopilotInstallation: vi.fn(a
 
 const context = { workspacePath: "/workspace", sessionId: "backend-1", turnId: "turn-1" };
 describe("Copilot provider registry conformance", () => {
+  it("requires only explicitly bound Copilot credentials before starting the provider", () => {
+    for (const environment of [{}, { COPILOT_GITHUB_TOKEN: "  " }, { COPILOT_GITHUB_TOKEN: "bad\0token" }, { GITHUB_TOKEN: "ambient-secret", GH_TOKEN: "ambient-secret" }]) {
+      expect(() => assertAcpxProfileEnvironment("copilot", environment)).toThrow(expect.objectContaining({ code: "COPILOT_AUTH_REQUIRED", retryable: false }));
+    }
+    expect(() => assertAcpxProfileEnvironment("copilot", { COPILOT_GITHUB_TOKEN: "fixture-explicit-token" })).not.toThrow();
+    expect(() => assertAcpxProfileEnvironment("codex", {})).not.toThrow();
+  });
   it("selects only the Copilot native installer and preserves the exact caller-selected profile", async () => {
     const profile = resolveQualifiedAcpxProfile("copilot", "explicit-exact-model");
     expect(await verifyAcpxProfileInstallation(profile)).toMatchObject({ commandDigest: "verified-by-native-factory" });

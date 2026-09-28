@@ -59,6 +59,16 @@ export type CopilotFailureCode =
   | "COPILOT_MODEL_UNAVAILABLE"
   | "COPILOT_REQUEST_FAILED";
 
+/** The runner binds this credential explicitly; ambient gh login is never used. */
+export function assertCopilotCredentials(environment: Readonly<NodeJS.ProcessEnv>): void {
+  const token = environment.COPILOT_GITHUB_TOKEN;
+  if (typeof token !== "string" || token.trim().length === 0 || token.includes("\0")) {
+    throw Object.assign(new Error("Bind a valid COPILOT_GITHUB_TOKEN credential for this runner."), {
+      code: "COPILOT_AUTH_REQUIRED", retryable: false,
+    });
+  }
+}
+
 /** Classify, but never echo provider text that may contain tokens or user data. */
 export function classifyCopilotFailure(error: unknown): { code: CopilotFailureCode; message: string } {
   const source = error instanceof Error ? error.message

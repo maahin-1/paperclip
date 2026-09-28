@@ -278,22 +278,25 @@
          break;
        }
        case "auto_retry_start": {
-@@ -1178,24 +1206,22 @@
-         });
-         break;
-       }
+@@ -1174,28 +1202,31 @@
+       case "auto_retry_end": {
+         this.emit({
+           sessionUpdate: "agent_message_chunk",
+-          content: { type: "text", text: "Retry finished, resuming." }
+-        });
+-        break;
+-      }
 -      case "auto_compaction_start": {
 -        this.emit({
 -          sessionUpdate: "agent_message_chunk",
--          content: {
--            type: "text",
+           content: {
+             type: "text",
 -            text: "Context nearing limit, running automatic compaction..."
--          }
--        });
-+      case "compaction_start": {
-+        this.emit({ sessionUpdate: "agent_message_chunk", content: {
-+          type: "text", text: ev.reason === "manual" ? "Compacting context..." : "Context nearing limit, running automatic compaction..."
-+        } });
++            text: ev.success === true ? "Retry finished, resuming."
++              : ev.success === false ? "Retry failed; the provider request did not recover."
++              : "Retry finished; the provider did not report an outcome."
+           }
+         });
          break;
        }
 -      case "auto_compaction_end": {
@@ -304,6 +307,12 @@
 -            text: "Automatic compaction finished; context was summarized to continue the session."
 -          }
 -        });
++      case "compaction_start": {
++        this.emit({ sessionUpdate: "agent_message_chunk", content: {
++          type: "text", text: ev.reason === "manual" ? "Compacting context..." : "Context nearing limit, running automatic compaction..."
++        } });
++        break;
++      }
 +      case "compaction_end": {
 +        (this.pendingTurn ? this.turnUsage : this.manualCompactionUsage)?.acceptCompaction(ev.result);
 +        this.emit({ sessionUpdate: "agent_message_chunk", content: {
@@ -317,7 +326,7 @@
          break;
        }
        case "agent_start": {
-@@ -1210,9 +1236,12 @@
+@@ -1210,9 +1241,12 @@
          break;
        }
        case "agent_settled": {
@@ -331,7 +340,7 @@
            this.pendingTurn = null;
            this.inAgentLoop = false;
            const next = this.turnQueue.shift();
-@@ -1725,6 +1754,7 @@
+@@ -1725,6 +1759,7 @@
    return process.env.PI_CODING_AGENT_DIR ? resolve3(process.env.PI_CODING_AGENT_DIR) : join4(homedir4(), ".pi", "agent");
  }
  function getEnableSkillCommands(cwd) {
@@ -339,7 +348,7 @@
    const merged = getMergedSettings(cwd);
    const direct = merged.enableSkillCommands;
    if (typeof direct === "boolean") return direct;
-@@ -1733,6 +1763,7 @@
+@@ -1733,6 +1768,7 @@
    return true;
  }
  function getQuietStartup(cwd) {
@@ -347,7 +356,7 @@
    const merged = getMergedSettings(cwd);
    const direct = merged.quietStartup;
    if (typeof direct === "boolean") return direct;
-@@ -1824,6 +1855,7 @@
+@@ -1824,6 +1860,7 @@
    const out = [];
    const seen = /* @__PURE__ */ new Set();
    for (const c of [...a, ...b]) {
@@ -355,7 +364,7 @@
      if (seen.has(c.name)) continue;
      seen.add(c.name);
      out.push(c);
-@@ -1884,11 +1916,13 @@
+@@ -1884,11 +1921,13 @@
          throw RequestError3.invalidParams(`Unknown sessionId: ${sessionId}`);
        }
        const cwd = opts?.cwd ?? stored.cwd;
@@ -369,7 +378,7 @@
            piCommand: process.env.PI_ACP_PI_COMMAND
          });
        } catch (e) {
-@@ -1897,7 +1931,7 @@
+@@ -1897,7 +1936,7 @@
          }
          throw e;
        }
@@ -378,7 +387,7 @@
        const session = this.sessions.getOrCreate(sessionId, {
          cwd,
          mcpServers: opts?.mcpServers ?? [],
-@@ -1917,6 +1951,7 @@
+@@ -1917,6 +1956,7 @@
      }
    }
    async initialize(params) {
@@ -386,7 +395,7 @@
      const supportedVersion = 1;
      const requested = params.protocolVersion;
      return {
-@@ -1933,7 +1968,8 @@
+@@ -1933,7 +1973,8 @@
        }),
        agentCapabilities: {
          loadSession: true,
@@ -396,7 +405,7 @@
          promptCapabilities: {
            image: true,
            audio: false,
-@@ -1942,8 +1978,7 @@
+@@ -1942,8 +1983,7 @@
          sessionCapabilities: {
            // **UNSTABLE** ACP capability used by Zed's codex-acp adapter.
            // Enables a native session picker in clients that support it.
@@ -406,7 +415,7 @@
          }
        }
      };
-@@ -1953,7 +1988,7 @@
+@@ -1953,7 +1993,7 @@
        throw RequestError3.invalidParams(`cwd must be an absolute path: ${params.cwd}`);
      }
      this.lastSessionCwd = params.cwd;
@@ -415,7 +424,7 @@
      const enableSkillCommands = getEnableSkillCommands(params.cwd);
      const session = await this.sessions.create({
        cwd: params.cwd,
-@@ -1994,14 +2029,14 @@
+@@ -1994,14 +2034,14 @@
        this.cleanupFailedNewSession(session.sessionId, state);
        throw RequestError3.authRequired(
          { authMethods: getAuthMethods() },
@@ -432,7 +441,7 @@
        );
      }
      const { configOptions, models, modes } = await getSessionConfiguration(session.proc, {
-@@ -2064,34 +2099,27 @@
+@@ -2064,34 +2104,27 @@
    }
    async prompt(params) {
      const session = await this.restoreSession(params.sessionId);
@@ -479,7 +488,7 @@
        }
        if (cmd === "session") {
          const stats = await session.proc.getSessionStats();
-@@ -2432,8 +2460,18 @@
+@@ -2432,8 +2465,18 @@
        }
      }
      const result = await session.prompt(message, images);
@@ -500,7 +509,7 @@
    }
    async cancel(params) {
      const session = this.sessions.maybeGet(params.sessionId);
-@@ -2473,7 +2511,7 @@
+@@ -2473,7 +2516,7 @@
        mcpServers: params.mcpServers
      });
      const proc = session.proc;
@@ -509,7 +518,7 @@
      this.sessions.closeAllExcept?.(session.sessionId);
      this.store.upsert({
        sessionId: params.sessionId,
-@@ -2607,6 +2645,7 @@
+@@ -2607,6 +2650,7 @@
      return response;
    }
    async deleteSession(params) {
@@ -517,7 +526,7 @@
      const stored = this.store.get(params.sessionId);
      const piSession = findPiSession(params.sessionId);
      if (!stored && !piSession) {
-@@ -2828,6 +2867,7 @@
+@@ -2828,6 +2872,7 @@
    return 0;
  }
  function buildUpdateNotice() {
@@ -525,7 +534,7 @@
    try {
      const piVersion = spawnSync("pi", ["--version"], { encoding: "utf-8" });
      const installed = (String(piVersion.stdout ?? "").trim() || String(piVersion.stderr ?? "").trim()).replace(
-@@ -2848,6 +2888,7 @@
+@@ -2848,6 +2893,7 @@
    }
  }
  function buildStartupInfo(opts) {
@@ -533,7 +542,7 @@
    void opts.fileCommands;
    const md = [];
    try {
-@@ -2980,6 +3021,7 @@
+@@ -2980,6 +3026,7 @@
 
  // src/index.ts
  if (process.argv.includes("--terminal-login")) {
@@ -541,7 +550,7 @@
    const { spawnSync: spawnSync2 } = await import("child_process");
    const cmd = getPiCommand(process.env.PI_ACP_PI_COMMAND);
    const res = spawnSync2(cmd, [], {
-@@ -3019,11 +3061,12 @@
+@@ -3019,11 +3066,12 @@
    }
  });
  var stream = ndJsonStream(input, output);
@@ -556,7 +565,7 @@
    } catch {
    }
    try {
---- a/dist/paperclip-runtime.js
+--- /dev/null
 +++ b/dist/paperclip-runtime.js
 @@ -0,0 +1,283 @@
 +/** Source for the helper embedded in patches/pi-acp@0.0.33.patch. */

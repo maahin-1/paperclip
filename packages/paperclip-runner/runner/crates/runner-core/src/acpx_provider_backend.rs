@@ -170,7 +170,7 @@ impl AcpxProviderDescriptor {
                 "0.0.33",
                 Some("@earendil-works/pi-coding-agent"),
                 Some("0.84.2"),
-                "sha256:b18deb44976b92e5e6b4f874f6e28dbbf23b34c917879ee3f7cdc03472919476",
+                "sha256:5ed73f923b24bf203cf39d6c5dedd5dfd21e94efcb2c2580b4adf53f1b91fd2f",
             ),
             "cursor" => (
                 self.model.as_str(),
@@ -2453,7 +2453,7 @@ mod tests {
                 "pi",
                 "pi-acp",
                 "0.0.33",
-                "sha256:b18deb44976b92e5e6b4f874f6e28dbbf23b34c917879ee3f7cdc03472919476",
+                "sha256:5ed73f923b24bf203cf39d6c5dedd5dfd21e94efcb2c2580b4adf53f1b91fd2f",
                 Some("@earendil-works/pi-coding-agent"),
                 Some("0.84.2"),
                 "openrouter/deepseek/deepseek-v4-flash-0731",

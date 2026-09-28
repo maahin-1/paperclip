@@ -120,6 +120,10 @@ the optional actual-distribution installation test. The patched-wrapper, real-Pi
 and distribution-builder Node suites passed all 14 tests with the exact pinned
 materialized distribution. These focused checks do not establish that full
 repository checks or PR CI pass after the final foundation rebase.
+The subsequent retry-status repair passed the same 30 Vitest tests and all 17
+Node tests, including new successful, failed, and missing-outcome retry cases.
+The failed and missing-outcome cases were observed failing against the prior
+wrapper before the repair.
 
 `test/pi-native-package-contract.test.mjs` runs the real Pi 0.84.2 CLI without
 credentials. It loads the compiled owned extension, initializes a loopback MCP
@@ -185,7 +189,7 @@ change its qualification status or enable admission without required live proof.
 The default provider pack remains independent of this isolated graph.
 
 On 2026-09-28 the builder completed a real public-registry installation on macOS
-arm64 with official Node 24.19.0. The resulting complete distribution passed all nine patched
+arm64 with official Node 24.19.0. The resulting complete distribution passed all twelve patched
 wrapper and real Pi admission tests; those tests never submit a model prompt to a
 provider. Five builder tests cover the full dependency lock, missing/changed
 packages, missing shrinkwrap entries, resource mutation, escaping links and unsafe
@@ -221,7 +225,7 @@ initialization and the missing-credential admission path without a model call.
 The exact reported `currentModelId` and billable receipt still need credentialed
 local and Linux/Daytona qualification.
 
-Profile version 2 declaration digest: `sha256:b18deb44976b92e5e6b4f874f6e28dbbf23b34c917879ee3f7cdc03472919476`. It hashes the versioned
+Profile version 2 declaration digest: `sha256:5ed73f923b24bf203cf39d6c5dedd5dfd21e94efcb2c2580b4adf53f1b91fd2f`. It hashes the versioned
 profile domain, patched wrapper source and platform closure pins. Every native
 closure remains independently checked at launch. Version 1 warm sessions cannot
 be reused with this integration.
@@ -247,7 +251,10 @@ capability fields come from the earlier complete receipt for the unchanged Pi
 closure. The JSON records that distinction and the correction of a serialization
 field after the provider had closed. It supersedes the earlier pack proof from
 `e3658cd0a6d26af63d59201a47039af7e6f33510` and precedes the evidence-retention and
-this report-only commit. It proves packaged offline admission only; it does not
+the later retry-status repair. That repair changes the wrapper, all three closure
+pins, and the profile digest; the retained pack does not prove those new bytes.
+A fresh pack record is required after the final foundation rebase. The historical
+record proves packaged offline admission only; it does not
 claim live model, interaction, or Daytona qualification. Later foundation changes
 require another pack build and source-pinned admission record.
 
@@ -260,9 +267,9 @@ every field in Pi's native event stream. These are explicit follow-ups:
   does not retain all structured `attempt`, `maxAttempts`, `delayMs`,
   `errorMessage`, `success`, `finalError`, `reason`, and `willRetry` fields. A
   follow-up should emit bounded provider notices with source-event provenance
-  and test failed retry completion. The current `auto_retry_end` display says
-  "Retry finished, resuming." even when its `success` field is false; terminal
-  assistant failure still fails the prompt, but this progress copy needs repair.
+  and test its metadata. The `auto_retry_end` display distinguishes explicit
+  success, failure, and unknown outcomes. A patched-process regression covers
+  each result and confirms that terminal assistant failure still fails the prompt.
 - Native `queue_update` contains steering and follow-up queues. Extension calls
   acknowledge RPC acceptance, but the wrapper does not project that event into
   durable queued/delivered state. Do not treat `{accepted: true}` as proof that

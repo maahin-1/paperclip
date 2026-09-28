@@ -123,6 +123,23 @@ test("provider failure is typed and unadmitted slash commands cannot bypass cont
   await assert.rejects(f.call("session/prompt", { sessionId: session.sessionId, prompt: [{ type: "text", text: "/export /outside/report.html" }] }), /not admitted/);
 });
 
+for (const [outcome, expected] of [
+  ["success", "Retry finished, resuming."],
+  ["failure", "Retry failed; the provider request did not recover."],
+  ["unknown", "Retry finished; the provider did not report an outcome."],
+]) {
+  test(`actual patched ACP retry ${outcome} reports only its stated outcome`, async (t) => {
+    const f = await fixture(t);
+    const session = await f.call("session/new", { cwd: join(f.root, "workspace"), mcpServers: [] });
+    const result = await f.call("session/prompt", { sessionId: session.sessionId, prompt: [{ type: "text", text: `retry-${outcome}` }] });
+    const messages = f.notifications.map((event) => event.params?.update?.content?.text).filter((text) => typeof text === "string");
+    assert.ok(messages.includes(expected));
+    if (outcome !== "success") assert.ok(messages.every((text) => !text.includes("resuming")));
+    if (outcome === "failure") assert.equal(result._meta.jetbrains.air.sessionFailure.severity, "error");
+    else assert.equal(result._meta?.jetbrains?.air?.sessionFailure, undefined);
+  });
+}
+
 test("manual and automatic compaction retain Pi 0.84.2 progress and usage", async (t) => {
   const f = await fixture(t); const session = await f.call("session/new", { cwd: join(f.root, "workspace"), mcpServers: [] });
   const prompt = (text) => f.call("session/prompt", { sessionId: session.sessionId, prompt: [{ type: "text", text }] });

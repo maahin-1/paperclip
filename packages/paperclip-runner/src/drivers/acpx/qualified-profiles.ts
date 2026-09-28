@@ -45,7 +45,7 @@ export const QUALIFIED_ACPX_PROFILES: Readonly<
     agentRuntimePackage: "@earendil-works/pi-coding-agent",
     agentRuntimeVersion: "0.84.2",
     commandDigest:
-      "sha256:b18deb44976b92e5e6b4f874f6e28dbbf23b34c917879ee3f7cdc03472919476",
+      "sha256:5ed73f923b24bf203cf39d6c5dedd5dfd21e94efcb2c2580b4adf53f1b91fd2f",
     qualificationModel: "openrouter/deepseek/deepseek-v4-flash-0731",
     reportedModelId: "openrouter/deepseek/deepseek-v4-flash-0731",
     permissionPolicy: "interactive",

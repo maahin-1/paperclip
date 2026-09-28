@@ -34,6 +34,15 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     response({ disposition: "started" }); active = true; output({ type: "agent_start" });
     if (request.message === "die") { process.exit(4); }
     if (request.message === "long") return;
+    if (["retry-success", "retry-failure", "retry-unknown"].includes(request.message)) {
+      output({ type: "auto_retry_start", attempt: 2, maxAttempts: 2, delayMs: 10, errorMessage: "Fixture provider unavailable" });
+      output({ type: "auto_retry_end", attempt: 2, ...(request.message === "retry-unknown" ? {} : { success: request.message === "retry-success" }) });
+      if (request.message === "retry-failure") {
+        output({ type: "message_end", message: { role: "assistant", timestamp: 2, stopReason: "error", usage: { input: 1, output: 0 } } });
+        active = false; output({ type: "agent_settled" });
+      } else finish("retry outcome received");
+      return;
+    }
     if (request.message === "auto-compact" || request.message === "retry-compact") { output({ type: "compaction_start", reason: "threshold" }); if (request.message === "retry-compact") output({ type: "summarization_retry_scheduled" }); output({ type: "compaction_end", reason: "threshold", result: compaction(), aborted: false, willRetry: true }); finish("compacted"); return; }
     if (request.message === "question") { output({ type: "extension_ui_request", id: "question-id", method: "input", title: "Project name", placeholder: "Name" }); return; }
     if (request.message === "permission") { output({ type: "extension_ui_request", id: "permission-id", method: "select", title: 'paperclip.pi.permission.v1:{"toolCallId":"tool-1","toolName":"bash","input":{"command":"pwd"}}', options: ["Allow once", "Allow for this session", "Deny"] }); return; }

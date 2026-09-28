@@ -52,6 +52,9 @@ describe("Cursor blocking extension normalization", () => {
   it("never truncates or fabricates approval of an oversized plan", () => {
     expect(() => normalizeCursorPlanRequest({ toolCallId: "plan", plan: "x".repeat(100_001), todos: [] })).toThrow();
     expect(() => normalizeCursorPlanRequest({ toolCallId: "plan", plan: "x", todos: [{ id: "1", content: "x", status: "mystery" }] })).toThrow();
+    const full = "Details\n".repeat(1_000);
+    expect(normalizeCursorPlanRequest({ toolCallId: "plan", plan: full, todos: [] }).questionSet.description).toBe(full);
+    expect(() => normalizeCursorPlanRequest({ toolCallId: "plan", plan: "漢".repeat(90_000), todos: [] })).toThrow("byte bound");
   });
 });
 

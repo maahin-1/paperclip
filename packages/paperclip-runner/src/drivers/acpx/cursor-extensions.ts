@@ -70,7 +70,7 @@ export function normalizeCursorQuestionRequest(value: unknown): {
       },
     };
   });
-  const questionSet = parsePaperclipQuestionSet({
+  const questionSet = boundedQuestionSet({
     schema: PAPERCLIP_QUESTION_SET_SCHEMA,
     title: optionalText(request.title, "title", 1_000) ?? "Cursor needs input",
     questions: bindings.map(({ question }) => question),
@@ -120,7 +120,7 @@ export function normalizeCursorPlanRequest(value: unknown): {
   requiredText(description, "complete plan presentation", 100_000);
   const revision = createHash("sha256").update(JSON.stringify({ toolCallId, name, overview, plan, todos, phases, isProject: request.isProject ?? false })).digest("hex");
   const questionId = `plan-${revision}`;
-  const questionSet = parsePaperclipQuestionSet({
+  const questionSet = boundedQuestionSet({
     schema: PAPERCLIP_QUESTION_SET_SCHEMA,
     title: name ?? "Review Cursor's plan", description, submitLabel: "Send decision",
     questions: [{ id: questionId, prompt: "How should Cursor proceed with this plan?", required: true,
@@ -270,6 +270,12 @@ function notice(id: string, category: string, summary: string, severity: "info" 
     schema: "paperclip.provider.notice.v1", noticeId: itemId, severity, category,
     scope: "turn", recoverable: true, userActionable: false, summary,
   } };
+}
+function boundedQuestionSet(value: unknown): PaperclipQuestionSet {
+  const parsed = parsePaperclipQuestionSet(value);
+  // Match the durable Rust question payload bound, including UTF-8 expansion.
+  if (Buffer.byteLength(JSON.stringify(parsed)) > 196 * 1024) throw new Error("Cursor question presentation exceeds the durable input byte bound");
+  return parsed;
 }
 function parseTodos(value: unknown): Todo[] {
   const seen = new Set<string>();

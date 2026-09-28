@@ -79,7 +79,8 @@ skill paths. Project trust is denied; user-bash RPC and terminal login are disab
 Only the controlled `/compact`, `/session`, and `/autocompact` slash commands are
 accepted. Startup package update checks are disabled.
 
-Pi can continue after a broken extension. Therefore the wrapper probes
+The wrapper must not infer complete extension registration from process startup.
+It therefore probes
 `get_commands` and requires the exact readiness sentinel
 `paperclip-runtime-ready-v1` / `Paperclip runtime gate v1`. The extension registers
 this command only after gates and every MCP catalog finish initialization. A
@@ -114,9 +115,10 @@ installed pinned package; an absent or unpatched dependency is a failure.
 `PAPERCLIP_TEST_PI_ACP_PACKAGE` can select a separately installed pinned fixture.
 These fixtures invoke no model or paid API.
 
-A no-key probe against the real Pi 0.84.2 CLI loaded the compiled owned extension
-and returned the exact readiness command. This checks the extension ABI and
-explicit loading path. It does not prove authenticated inference, native tool
+`test/pi-native-package-contract.test.mjs` runs the real Pi 0.84.2 CLI without
+credentials. It loads the compiled owned extension, initializes a loopback MCP
+catalog, and returns the exact readiness command. An invalid catalog exits Pi
+before RPC admission. This checks the extension ABI and explicit loading path. It does not prove authenticated inference, native tool
 execution, MCP model invocation, credential renewal, or remote sandbox behavior.
 Those remain required local and Daytona qualification evidence under the shared
 live-spend cap. No live inference spend was incurred by these deterministic tests.

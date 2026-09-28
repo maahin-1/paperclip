@@ -1,3 +1,4 @@
+import { materializePiDistribution } from "./materialize-pi-distribution.mjs";
 const CANDIDATES = new Set(["cursor", "copilot", "pi"]);
 
 export function parseProviderPackArguments(args) {
@@ -18,5 +19,6 @@ export function parseProviderPackArguments(args) {
 /** Closed source-owned builder registry; provider branches add their exact pins. */
 export async function materializeCandidateProviderPack({ provider, outputRoot }) {
   if (!CANDIDATES.has(provider)) throw new Error("Unknown candidate provider");
+  if (provider === "pi") return materializePiDistribution({ outputRoot });
   throw new Error(`The ${provider} candidate distribution builder is not included in this source revision`);
 }

@@ -105,7 +105,7 @@ part of its verified package and must never be omitted from a copy or hash.
 
 ## Verification and maintenance
 
-The three colocated Vitest suites exercise questions, permissions, timeouts,
+The four colocated Vitest suites exercise questions, permissions, timeouts,
 framing, usage, file policies, MCP behavior, and graph verification. The Node test
 `test/pi-acp-package-contract.test.mjs` launches the actual patched npm wrapper
 against a deterministic RPC fixture. It proves initialization, streaming,
@@ -114,6 +114,12 @@ exit, required sentinel, and typed failure settlement. It requires the exact
 installed pinned package; an absent or unpatched dependency is a failure.
 `PAPERCLIP_TEST_PI_ACP_PACKAGE` can select a separately installed pinned fixture.
 These fixtures invoke no model or paid API.
+
+At source `9c8ffa9de`, all 30 tests in those four Vitest files passed, including
+the optional actual-distribution installation test. The patched-wrapper, real-Pi,
+and distribution-builder Node suites passed all 14 tests with the exact pinned
+materialized distribution. These focused checks do not establish that full
+repository checks or PR CI pass after the final foundation rebase.
 
 `test/pi-native-package-contract.test.mjs` runs the real Pi 0.84.2 CLI without
 credentials. It loads the compiled owned extension, initializes a loopback MCP
@@ -170,8 +176,8 @@ bound to a trusted per-target source constant. Its `pi-entry.cjs` bootstrap deri
 snapshot-relative Node, Pi, extension and module-guard bindings; the Pi subprocess
 loads the same verified module guard.
 
-Proposed common provider-pack integration: an explicit `--candidate-provider=pi`
-flag invokes exported `materializePiDistribution` into
+The common provider-pack integration uses an explicit `--candidate-providers=pi`
+flag. It invokes exported `materializePiDistribution` into
 `provider-assets/pi/<platform-arch>`, records the returned manifest digest and metadata path
 in the outer pack payload, and includes the entire distribution in the outer
 pack's integrity proof. The flag prepares an inspectable candidate; it must not
@@ -179,7 +185,7 @@ change its qualification status or enable admission without required live proof.
 The default provider pack remains independent of this isolated graph.
 
 On 2026-09-28 the builder completed a real public-registry installation on macOS
-arm64 with official Node 24.19.0. The resulting complete distribution passed all eight patched
+arm64 with official Node 24.19.0. The resulting complete distribution passed all nine patched
 wrapper and real Pi admission tests; those tests never submit a model prompt to a
 provider. Five builder tests cover the full dependency lock, missing/changed
 packages, missing shrinkwrap entries, resource mutation, escaping links and unsafe
@@ -232,7 +238,50 @@ invalidates complete-turn token/cost totals instead of inventing complete covera
 The retained [macOS ARM64 provider-pack admission proof](../../packages/paperclip-runner/test-fixtures/pi-acp/offline-provider-pack-proof.darwin-arm64.json)
 records the exact source revision, pack/runtime hashes, declared model, and
 missing-credential result. It contains no credentials or provider session IDs and
-records zero paid calls. That pack was built at `e3658cd0a6d26af63d59201a47039af7e6f33510`,
-before the later Daytona input-contract and evidence-retention commits. This
-proves packaged offline admission only; it does not claim live model, interaction,
-or Daytona qualification.
+records zero paid calls. The current retained pack was built at
+`1e0d11c482f8ef50b6afc1430cb736579114b266`; its manifest digest is
+`sha256:f859e30e51326ff875d616e2bb3fd4c0246ce1f58a5988968b91bae176a68281`.
+It uses the integrated installation registry and immutable snapshot. The probe
+reasserted steering advertisement and missing-credential rejection; its other
+capability fields come from the earlier complete receipt for the unchanged Pi
+closure. The JSON records that distinction and the correction of a serialization
+field after the provider had closed. It supersedes the earlier pack proof from
+`e3658cd0a6d26af63d59201a47039af7e6f33510` and precedes the evidence-retention and
+this report-only commit. It proves packaged offline admission only; it does not
+claim live model, interaction, or Daytona qualification. Later foundation changes
+require another pack build and source-pinned admission record.
+
+## Remaining event and qualification work
+
+The candidate preserves the core request/response paths. It does not preserve
+every field in Pi's native event stream. These are explicit follow-ups:
+
+- Retry and compaction progress currently becomes assistant text. The wrapper
+  does not retain all structured `attempt`, `maxAttempts`, `delayMs`,
+  `errorMessage`, `success`, `finalError`, `reason`, and `willRetry` fields. A
+  follow-up should emit bounded provider notices with source-event provenance
+  and test failed retry completion. The current `auto_retry_end` display says
+  "Retry finished, resuming." even when its `success` field is false; terminal
+  assistant failure still fails the prompt, but this progress copy needs repair.
+- Native `queue_update` contains steering and follow-up queues. Extension calls
+  acknowledge RPC acceptance, but the wrapper does not project that event into
+  durable queued/delivered state. Do not treat `{accepted: true}` as proof that
+  a later model turn consumed a message. Queue contents are also user content,
+  so any added projection needs explicit retention rules.
+- Extension `setStatus`, `setWidget`, `setTitle`, and `set_editor_text` messages
+  have no Paperclip UI projection. The admitted extension does not use them.
+  `notify` retains a bounded message and severity, while interactive `select`,
+  `confirm`, `input`, and `editor` have the explicit response bridge. Native
+  session-name and thinking-level change events also lack a separate event
+  projection; existing ACP configuration responses remain the control surface.
+- File diffs are bounded text snapshots, not complete binary changes or durable
+  artifact publication. Semantic artifact tools remain the supported publication
+  path. Image prompting, model-triggered tools, approvals, typed questions,
+  explicit steering, warm recovery, and live usage need authenticated local and
+  Linux x64 Daytona proof for the exact declared model. The reported model ID
+  must be checked, rather than inferred from the configuration.
+
+No provider or Daytona credentials were available for this qualification.
+Provider calls, paid calls, and measured inference spend remain zero. Production
+admission must remain qualification-pending until the live matrix and spend
+receipt checks pass; catalog pricing estimates alone are not spend receipts.

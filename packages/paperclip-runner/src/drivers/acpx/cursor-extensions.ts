@@ -1,0 +1,304 @@
+import { createHash } from "node:crypto";
+import { lstat, realpath } from "node:fs/promises";
+import { isAbsolute, relative, resolve, sep } from "node:path";
+
+import {
+  PAPERCLIP_QUESTION_SET_SCHEMA,
+  parsePaperclipQuestionResponse,
+  parsePaperclipQuestionSet,
+  type PaperclipQuestionSet,
+} from "../../contracts/question-set.js";
+import type { CanonicalProviderEvent } from "../../provider-events.js";
+
+export const CURSOR_EXTENSION_REQUEST_METHODS = [
+  "cursor/ask_question", "cursor/create_plan",
+] as const;
+// The pinned binary sends these with extMethod (a JSON-RPC ID), even though
+// Cursor documents them as notifications. Acknowledge immediately with {}.
+export const CURSOR_EXTENSION_NOTIFICATION_METHODS = [
+  "cursor/update_todos", "cursor/task", "cursor/generate_image",
+] as const;
+
+type CursorQuestionResult = { outcome:
+  | { outcome: "answered"; answers: Array<{ questionId: string; selectedOptionIds: string[] }> }
+  | { outcome: "skipped"; reason?: string }
+  | { outcome: "cancelled" }
+};
+type CursorPlanResult = { outcome:
+  | { outcome: "accepted" }
+  | { outcome: "rejected"; reason?: string }
+  | { outcome: "cancelled" }
+};
+type Todo = { id: string; content: string; status: "pending" | "in_progress" | "completed" | "cancelled" };
+
+/** Native IDs are mapped through opaque UI IDs, including prototype-like keys. */
+export function normalizeCursorQuestionRequest(value: unknown): {
+  toolCallId: string;
+  questionSet: PaperclipQuestionSet;
+  accept(response: unknown): CursorQuestionResult;
+  resolve(response: unknown): CursorQuestionResult;
+  cancel(): CursorQuestionResult;
+  skip(reason?: string): CursorQuestionResult;
+} {
+  const request = object(value);
+  const toolCallId = requiredText(request.toolCallId, "toolCallId", 1_000);
+  const nativeQuestions = array(request.questions, "questions", 64, true);
+  const seenQuestions = new Set<string>();
+  const bindings = nativeQuestions.map((raw, index) => {
+    const question = object(raw);
+    const nativeId = unique(requiredText(question.id, "question.id", 1_000), seenQuestions, "question ID");
+    const seenOptions = new Set<string>();
+    if (question.allowMultiple !== undefined && typeof question.allowMultiple !== "boolean") {
+      throw new Error("Cursor allowMultiple must be boolean");
+    }
+    const options = array(question.options, "options", 128, true).map((rawOption, optionIndex) => {
+      const option = object(rawOption);
+      return {
+        nativeId: unique(requiredText(option.id, "option.id", 1_000), seenOptions, "option ID"),
+        id: `option-${optionIndex + 1}`,
+        label: requiredText(option.label, "option.label", 1_000),
+      };
+    });
+    return {
+      nativeId, options,
+      question: {
+        id: `question-${index + 1}`,
+        prompt: requiredText(question.prompt, "question.prompt", 4_000),
+        required: true,
+        answerMode: question.allowMultiple === true ? "multi_select" as const : "single_select" as const,
+        options: options.map(({ id, label }) => ({ id, label })),
+      },
+    };
+  });
+  const questionSet = parsePaperclipQuestionSet({
+    schema: PAPERCLIP_QUESTION_SET_SCHEMA,
+    title: optionalText(request.title, "title", 1_000) ?? "Cursor needs input",
+    questions: bindings.map(({ question }) => question),
+  });
+  const accept = (response: unknown): CursorQuestionResult => {
+    const parsed = parsePaperclipQuestionResponse(questionSet, response);
+    return { outcome: { outcome: "answered", answers: bindings.map(binding => ({
+      questionId: binding.nativeId,
+      selectedOptionIds: (parsed.answers[binding.question.id]?.selectedOptionIds ?? []).map(id => {
+        const option = binding.options.find(candidate => candidate.id === id);
+        if (!option) throw new Error("Cursor question option is no longer available");
+        return option.nativeId;
+      }),
+    })) } };
+  };
+  return {
+    toolCallId, questionSet, accept, resolve: accept,
+    cancel: () => ({ outcome: { outcome: "cancelled" } }),
+    skip: (reason?: string) => ({ outcome: { outcome: "skipped", ...(reason === undefined ? {} : { reason: requiredText(reason, "reason", 4_000) }) } }),
+  };
+}
+
+/** The approval question ID binds the entire displayed revision, not its title. */
+export function normalizeCursorPlanRequest(value: unknown): {
+  toolCallId: string;
+  revision: string;
+  questionSet: PaperclipQuestionSet;
+  resolve(response: unknown): CursorPlanResult;
+  cancel(): CursorPlanResult;
+} {
+  const request = object(value);
+  const toolCallId = requiredText(request.toolCallId, "toolCallId", 1_000);
+  const plan = requiredText(request.plan, "plan", 100_000);
+  const name = optionalText(request.name, "name", 1_000);
+  const overview = optionalText(request.overview, "overview", 4_000);
+  const todos = parseTodos(request.todos);
+  const phases = request.phases === undefined ? [] : array(request.phases, "phases", 64).map(value => {
+    const phase = object(value);
+    return { name: requiredText(phase.name, "phase.name", 1_000), todos: parseTodos(phase.todos) };
+  });
+  if (request.isProject !== undefined && typeof request.isProject !== "boolean") throw new Error("Cursor isProject must be boolean");
+  const description = [overview, plan, todos.length ? `Todos\n${renderTodos(todos)}` : undefined,
+    ...phases.map(phase => `Phase: ${phase.name}\n${renderTodos(phase.todos)}`),
+    request.isProject === true ? "This is a project plan." : undefined,
+  ].filter((part): part is string => part !== undefined).join("\n\n");
+  // Reject rather than truncating a document that a person must approve.
+  requiredText(description, "complete plan presentation", 100_000);
+  const revision = createHash("sha256").update(JSON.stringify({ toolCallId, name, overview, plan, todos, phases, isProject: request.isProject ?? false })).digest("hex");
+  const questionId = `plan-${revision}`;
+  const questionSet = parsePaperclipQuestionSet({
+    schema: PAPERCLIP_QUESTION_SET_SCHEMA,
+    title: name ?? "Review Cursor's plan", description, submitLabel: "Send decision",
+    questions: [{ id: questionId, prompt: "How should Cursor proceed with this plan?", required: true,
+      answerMode: "single_select", options: [
+        { id: "accept", label: "Accept plan" },
+        { id: "reject", label: "Reject plan" },
+        { id: "cancel", label: "Cancel plan request" },
+      ] }, { id: "reason", prompt: "Reason for rejecting the plan (optional)", required: false,
+        answerMode: "text", textValidation: { maxLength: 4_000 } }],
+  });
+  return {
+    toolCallId, revision, questionSet,
+    resolve(response: unknown): CursorPlanResult {
+      const parsed = parsePaperclipQuestionResponse(questionSet, response);
+      const decision = parsed.answers[questionId]?.selectedOptionIds?.[0];
+      const reason = parsed.answers.reason?.text;
+      if (decision === "accept") {
+        if (reason?.trim()) throw new Error("Cursor's accepted outcome cannot carry feedback; remove feedback or reject the plan");
+        return { outcome: { outcome: "accepted" } };
+      }
+      if (decision === "reject") return { outcome: { outcome: "rejected", ...(reason ? { reason } : {}) } };
+      return { outcome: { outcome: "cancelled" } };
+    },
+    cancel: () => ({ outcome: { outcome: "cancelled" } }),
+  };
+}
+
+/** Create one reducer per active turn; Cursor todo updates are deltas. */
+export function createCursorNotificationNormalizer(input: { workspacePath: string; turnId: string }) {
+  let todos = new Map<string, Todo>();
+  let revision = 0;
+  const planId = stableId(`cursor-plan:${input.turnId}`);
+  return async (method: string, value: unknown): Promise<CanonicalProviderEvent[]> => {
+    const request = object(value);
+    const toolCallId = requiredText(request.toolCallId, "toolCallId", 1_000);
+    const itemId = stableId(toolCallId);
+    if (method === "cursor/update_todos") {
+      if (typeof request.merge !== "boolean") throw new Error("Cursor todo merge must be boolean");
+      const next = request.merge ? new Map(todos) : new Map<string, Todo>();
+      for (const todo of parseTodos(request.todos)) next.set(todo.id, todo);
+      if (next.size > 256) throw new Error("Cursor todo snapshot exceeds 256 items");
+      todos = next;
+      return [{ eventType: "plan.updated", itemId, payload: {
+        schema: "paperclip.plan.updated.v1", planId, revision: ++revision,
+        explanation: null,
+        steps: Array.from(todos.values(), todo => ({ stepId: stableId(todo.id),
+          body: todo.status === "cancelled" ? `${todo.content}\n(Cancelled)` : todo.content,
+          status: todo.status === "cancelled" ? "blocked" : todo.status })),
+        complete: todos.size > 0 && Array.from(todos.values()).every(todo => todo.status === "completed"),
+        syncStatus: "not_applicable", documentRevision: null,
+      } }];
+    }
+    if (method === "cursor/task") {
+      const subtype = typeof request.subagentType === "string" ? request.subagentType : object(request.subagentType).custom;
+      const durationMs = request.durationMs;
+      if (durationMs !== undefined && (!Number.isSafeInteger(durationMs) || Number(durationMs) < 0)) throw new Error("Cursor task duration must be a nonnegative integer");
+      return [{ eventType: "delegation.completed", itemId, payload: {
+        schema: "paperclip.delegation.v1", delegationId: itemId, action: "spawn", status: "completed",
+        children: [{ childId: stableId(optionalText(request.agentId, "agentId", 1_000) ?? toolCallId),
+          role: optionalText(subtype, "subagentType", 160) ?? null,
+          model: optionalText(request.model, "model", 240) ?? null, status: "completed",
+          summary: requiredText(request.description, "description", 4_000),
+          activitySummary: [requiredText(request.prompt, "prompt", 3_800), durationMs === undefined ? undefined : `Duration: ${durationMs} ms`].filter(Boolean).join("\n"),
+        }],
+      } }];
+    }
+    if (method === "cursor/generate_image") {
+      const description = requiredText(request.description, "description", 4_000);
+      const filePath = optionalText(request.filePath, "filePath", 4_096);
+      const reference = filePath === undefined ? null : await cursorWorkspaceArtifactReference(input.workspacePath, filePath);
+      const references = request.referenceImagePaths === undefined ? [] : array(request.referenceImagePaths, "referenceImagePaths", 16);
+      const viewed: CanonicalProviderEvent[] = [];
+      for (let index = 0; index < references.length; index++) {
+        const source = requiredText(references[index], "referenceImagePath", 4_096);
+        const reference = await cursorWorkspaceArtifactReference(input.workspacePath, source);
+        const referenceId = stableId(`${toolCallId}:reference:${index}`);
+        viewed.push({ eventType: "artifact.viewed", itemId: referenceId, payload: {
+          schema: "paperclip.artifact.viewed.v1", artifactId: referenceId, reference, mediaType: "image/*", title: "Cursor image reference",
+        } });
+      }
+      return [{ eventType: "artifact.generated", itemId, payload: {
+        schema: "paperclip.artifact.generated.v1", artifactId: itemId,
+        status: "completed", reference, mediaType: "image/*", registered: false, failure: null,
+      } }, notice(`${toolCallId}:description`, "cursor_image", description),
+      ...viewed,
+      ...(filePath && reference === null ? [notice(`${toolCallId}:path`, "cursor_artifact_path_rejected", "Cursor reported an image location that could not be verified inside this workspace.", "warning")] : [])];
+    }
+    throw new Error(`Unsupported Cursor notification method ${method}`);
+  };
+}
+
+/** References are hints, never instructions to read/upload paths. Revalidate on use. */
+export async function cursorWorkspaceArtifactReference(workspacePath: string, filePath: string): Promise<string | null> {
+  if (!filePath || /[\u0000-\u001f\u007f]/.test(filePath) || filePath.includes("\\")) return null;
+  try {
+    const workspace = await realpath(workspacePath);
+    // macOS commonly presents /var while realpath returns /private/var.
+    let lexical = relative(resolve(workspacePath), resolve(workspacePath, filePath));
+    if (!contained(lexical) && isAbsolute(filePath)) lexical = relative(workspace, filePath);
+    if (!contained(lexical)) return null;
+    const target = resolve(workspace, lexical);
+    const physical = await realpath(target);
+    const physicalRelative = relative(workspace, physical);
+    if (!contained(physicalRelative) || physical !== target || !(await lstat(target)).isFile()) return null;
+    return physicalRelative.split(sep).join("/");
+  } catch { return null; }
+}
+
+/** Call only after the host has verified parent-session/child-session ownership. */
+export function normalizeCursorSubagentUpdate(value: unknown): CanonicalProviderEvent | null {
+  const update = object(value);
+  if (update.sessionUpdate !== "subagent_spawned" && update.sessionUpdate !== "subagent_state_update") return null;
+  const metadata = object(object(update._meta).cursor);
+  const itemId = stableId(requiredText(metadata.toolCallId, "subagent toolCallId", 1_000));
+  const state = update.sessionUpdate === "subagent_spawned" ? "running" : update.state;
+  const status = state === "cancelled" ? "interrupted" : state;
+  if (!["running", "completed", "failed", "interrupted"].includes(String(status))) throw new Error("Unknown Cursor subagent state");
+  return { eventType: status === "running" ? "delegation.started" : "delegation.completed", itemId, payload: {
+    schema: "paperclip.delegation.v1", delegationId: itemId, action: "spawn", status,
+    children: [{ childId: stableId(requiredText(update.subagentSessionId, "subagentSessionId", 1_000)),
+      role: optionalText(update.name, "name", 160) ?? null, model: optionalText(metadata.model, "model", 240) ?? null,
+      status, summary: optionalText(update.task, "task", 4_000) ?? null, activitySummary: null }],
+  } };
+}
+
+/** Preserve identity across delta state updates; use a fresh reducer per turn. */
+export function createCursorSubagentNormalizer() {
+  const children = new Map<string, Record<string, unknown>>();
+  return (value: unknown): CanonicalProviderEvent | null => {
+    const update = object(value);
+    if (update.sessionUpdate !== "subagent_spawned" && update.sessionUpdate !== "subagent_state_update") return null;
+    const id = requiredText(update.subagentSessionId, "subagentSessionId", 1_000);
+    const previous = children.get(id);
+    if (!previous && children.size >= 256) throw new Error("Cursor subagent inventory exceeds 256 children");
+    const merged = { ...previous, ...update, _meta: {
+      cursor: { ...(previous ? object(object(previous._meta).cursor) : {}), ...object(object(update._meta).cursor) },
+    } };
+    const normalized = normalizeCursorSubagentUpdate(merged);
+    children.set(id, merged);
+    return normalized;
+  };
+}
+
+function notice(id: string, category: string, summary: string, severity: "info" | "warning" = "info"): CanonicalProviderEvent {
+  const itemId = stableId(id);
+  return { eventType: "provider.notice.recorded", itemId, payload: {
+    schema: "paperclip.provider.notice.v1", noticeId: itemId, severity, category,
+    scope: "turn", recoverable: true, userActionable: false, summary,
+  } };
+}
+function parseTodos(value: unknown): Todo[] {
+  const seen = new Set<string>();
+  return array(value, "todos", 256).map(raw => {
+    const todo = object(raw);
+    if (!["pending", "in_progress", "completed", "cancelled"].includes(String(todo.status))) throw new Error("Unknown Cursor todo status");
+    return { id: unique(requiredText(todo.id, "todo.id", 1_000), seen, "todo ID"),
+      content: requiredText(todo.content, "todo.content", 3_980), status: todo.status as Todo["status"] };
+  });
+}
+function renderTodos(todos: Todo[]): string { return todos.map(todo => `- [${todo.status}] ${todo.content}`).join("\n"); }
+function stableId(value: string): string { return `cursor-${createHash("sha256").update(value).digest("hex")}`; }
+function contained(path: string): boolean { return path !== "" && path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path); }
+function object(value: unknown): Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("Cursor payload must be an object");
+  return value as Record<string, unknown>;
+}
+function array(value: unknown, field: string, max: number, nonempty = false): unknown[] {
+  if (!Array.isArray(value) || value.length > max || (nonempty && value.length === 0)) throw new Error(`Cursor ${field} must contain ${nonempty ? "1" : "0"} through ${max} items`);
+  return value;
+}
+function optionalText(value: unknown, field: string, max: number): string | undefined {
+  return value === undefined ? undefined : requiredText(value, field, max);
+}
+function requiredText(value: unknown, field: string, max: number): string {
+  if (typeof value !== "string" || value.length === 0 || value.length > max || value.includes("\0")) throw new Error(`Cursor ${field} must be nonempty text of at most ${max} characters`);
+  return value;
+}
+function unique(value: string, seen: Set<string>, field: string): string {
+  if (seen.has(value)) throw new Error(`Duplicate Cursor ${field}`);
+  seen.add(value); return value;
+}

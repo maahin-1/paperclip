@@ -3,11 +3,13 @@ import type { CanonicalProviderEvent } from "../../provider-events.js";
 import { redactPaperclipSemanticValue } from "../../semantic-tools/redaction.js";
 import { COPILOT_ACP_EVENT_METHOD, normalizeCopilotSessionEvent, type CopilotSessionEvent } from "./copilot-events.js";
 import type { AcpxProfileExtensionAdapter, AcpxProfileExtensionContext } from "./profile-extensions.js";
+import { classifyCopilotFailure } from "./copilot-profile.js";
 
 /** Display projection only. Native notices cannot settle or charge a runner turn. */
-export function createCopilotProfileExtensionAdapter(context: AcpxProfileExtensionContext): AcpxProfileExtensionAdapter {
+export function createCopilotProfileExtensionAdapter(context: AcpxProfileExtensionContext): AcpxProfileExtensionAdapter & { classifyError: typeof classifyCopilotFailure } {
   let sequence = 0;
   return {
+    classifyError: classifyCopilotFailure,
     async request() {
       throw new Error("Copilot 1.0.88 has no qualified inbound ACP extension request responder");
     },

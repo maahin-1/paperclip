@@ -67,6 +67,13 @@ commands capable of changing permissions, cwd, remote/export, MCP and schedules;
 these are not authority to offer an unrestricted command UI. Adversarial
 workspace/config qualification remains required before release.
 
+The pinned ACP handler maps `allow_always` to native `approve-for-session` for
+commands, writes, reads, MCP and other supported tools. Path approval is also
+session-scoped; URL approval is session-scoped to an origin pattern. Factory
+permissions omit that option and reject fabricated permanent approval. This
+scope is confirmed in source, not inferred from the option label. Read/write
+session grants are broader than one file and must be described accurately.
+
 ## Negotiation and event contract
 
 The observed initialize result advertises protocol 1; `loadSession: true`;
@@ -103,6 +110,15 @@ provider timestamp and subagent identity. Payloads cannot authorize filesystem
 reads, workspace rebinding, permission changes, native-input replies or terminal
 settlement. Inline binary assets are content-address verified; only metadata is
 forwarded until a provider-session artifact resolver can upload them safely.
+
+`copilot-extension-adapter.ts` converts the normalized events into canonical
+delegation, compaction and unregistered artifact activity. Every safe projected
+field is retained in bounded provider-notice details with method/event/session/
+turn provenance. Notices have readable summaries; secret-shaped string values
+are scrubbed without erasing numeric token counters. These display events never
+create a usage charge, input-resolution acknowledgment, registered artifact, or
+turn terminal event. The provider registry installs this factory and initialize
+capability metadata in the provider branch.
 
 ## Comparison against Codex app-server
 
@@ -180,6 +196,7 @@ python3 packages/paperclip-runner/scripts/probe-copilot-acp.py --package-root /p
 python3 packages/paperclip-runner/scripts/probe-copilot-acp.py --package-root /path/to/copilot-darwin-arm64/package --scenario attached-shell
 node --test packages/paperclip-runner/scripts/materialize-copilot-binary.test.mjs
 pnpm --filter @paperclipai/paperclip-runner exec vitest run src/drivers/acpx/copilot-events.test.ts src/drivers/acpx/copilot-profile.test.ts src/drivers/acpx/copilot-evidence.test.ts
+pnpm --filter @paperclipai/paperclip-runner exec vitest run src/drivers/acpx/copilot-extension-adapter.test.ts
 ```
 
 Retained real-binary evidence:

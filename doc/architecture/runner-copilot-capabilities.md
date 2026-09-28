@@ -194,7 +194,7 @@ does not verify any GitHub model's availability.
 ```sh
 python3 packages/paperclip-runner/scripts/probe-copilot-acp.py --package-root /path/to/copilot-darwin-arm64/package --scenario deny-write
 python3 packages/paperclip-runner/scripts/probe-copilot-acp.py --package-root /path/to/copilot-darwin-arm64/package --scenario attached-shell
-node --test packages/paperclip-runner/scripts/materialize-copilot-binary.test.mjs
+node --test packages/paperclip-runner/scripts/materialize-copilot-binary.test.mjs packages/paperclip-runner/scripts/build-copilot-distribution.test.mjs
 pnpm --filter @paperclipai/paperclip-runner exec vitest run src/drivers/acpx/copilot-events.test.ts src/drivers/acpx/copilot-profile.test.ts src/drivers/acpx/copilot-evidence.test.ts
 pnpm --filter @paperclipai/paperclip-runner exec vitest run src/drivers/acpx/copilot-extension-adapter.test.ts
 ```
@@ -214,3 +214,28 @@ configuration, warm/restart input recovery, active cancellation, multi-company
 isolation, artifact UI, macOS x64 execution and Linux x64 Daytona E2E. Retry with
 another pinned release if a blocking interaction or settlement/denial case fails;
 do not suppress the interaction to obtain a pass.
+
+## Build-owned native distribution
+
+`buildPinnedCopilotDistribution({ outputRoot })` in
+`scripts/build-copilot-distribution.mjs` downloads the exact platform npm archive
+from `registry.npmjs.org`, verifies its pinned SHA-512 integrity, and admits only
+the four expected regular tar members. Traversal, links, PAX overrides, duplicate
+entries, bad checksums, hidden trailers, and oversized input fail admission. The
+binary is independently checked against the pinned SHA-256 and exact size before
+it is materialized; no install script, npm launcher, or downloaded executable runs
+during this build. `outputRoot` is the selected pack's exact
+`provider-assets/copilot/<platform>-<arch>` directory.
+
+The factory resolves those assets from the runner's verified package authority,
+including the descriptor-loaded sidecar path, then the native verifier makes a
+private executable lease and fresh extraction cache. Callers cannot choose a
+runtime binary or distribution root.
+
+On 2026-09-28 the strict archive reader verified the actual pinned archives for
+all three platforms. A fresh macOS ARM64 registry download completed the full
+builder, returning the profile digest above and closure
+`sha256:fb3b367a45cd76122fe931521fa2a18adf234ba944fc302db9e10e005e57037e`.
+The temporary output was removed after verification. This packaging proof used
+no model credentials, executed no provider turn, and incurred $0 model spend;
+it does not qualify either local product behavior or Daytona execution.

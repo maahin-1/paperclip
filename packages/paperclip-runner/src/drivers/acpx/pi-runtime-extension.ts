@@ -142,6 +142,11 @@ export async function checkPiNativeTool(
   if (typeof pathValue !== "string" || /[\0\r\n]/.test(pathValue)) return "Pi tool path is invalid";
   const logical = resolve(config.workspace, pathValue);
   const target = await physicalPath(logical);
+  if (!readTools.has(event.toolName)) {
+    for (const root of config.readRoots) {
+      if (inside(root, logical) || inside(await realpath(root), target)) return "Assigned Pi skills are read-only";
+    }
+  }
   for (const root of config.protectedRoots) {
     if (inside(root, logical) || inside(await physicalPath(root), target)) return "Pi tool targets protected runtime state";
   }
@@ -196,6 +201,18 @@ export async function installPiRuntimeExtension(
   // Registered names are held in this closure; provider-originated metadata
   // cannot promote a tool to the authenticated Paperclip bridge.
   const bridgeTools = new Set<string>();
+  const permissionGrants = new Set<string>();
+  // Assigned skills are a separate immutable lease. A config or executable
+  // directory must never gain readability by being presented as a skill root.
+  for (const root of config.readRoots) {
+    const physicalRoot = await realpath(root);
+    for (const protectedRoot of config.protectedRoots) {
+      const physicalProtected = await physicalPath(protectedRoot);
+      if (inside(protectedRoot, root) || inside(root, protectedRoot) || inside(physicalProtected, physicalRoot) || inside(physicalRoot, physicalProtected)) {
+        throw new Error("Pi assigned skills overlap protected runtime state");
+      }
+    }
+  }
   pi.on("project_trust", () => ({ trusted: "no", remember: false }));
   pi.on("user_bash", () => ({ result: { output: "Interactive shell commands are disabled in Paperclip Runner", exitCode: 1, cancelled: false, truncated: false } }));
   pi.on("before_agent_start", (event) => config.instructions
@@ -207,10 +224,15 @@ export async function installPiRuntimeExtension(
       if (denial) return { block: true, reason: denial };
       const detail = JSON.stringify({ toolCallId: event.toolCallId, toolName: event.toolName, input: event.input });
       if (Buffer.byteLength(detail) > 48 * 1024) return { block: true, reason: "Pi permission request is oversized" };
-      const selection = await context.ui.select(`${PI_PERMISSION_TITLE_PREFIX}${detail}`, [...PI_PERMISSION_OPTIONS]);
+      // A session grant covers only the identical operation, never a whole
+      // tool class or a subsequent path. Paths are still revalidated each time.
+      const grantKey = JSON.stringify([event.toolName, event.input]);
+      const selection = permissionGrants.has(grantKey) ? "Allow for this session"
+        : await context.ui.select(`${PI_PERMISSION_TITLE_PREFIX}${detail}`, [...PI_PERMISSION_OPTIONS]);
       if (selection !== "Allow once" && selection !== "Allow for this session") return { block: true, reason: "Pi operation was denied or cancelled" };
       // Re-check file bindings after a human wait; approval never freezes paths.
       const changed = await checkPiNativeTool(event, context, config);
+      if (!changed && selection === "Allow for this session" && permissionGrants.size < 4096) permissionGrants.add(grantKey);
       return changed ? { block: true, reason: changed } : undefined;
     } catch { return { block: true, reason: "Pi permission boundary is unavailable" }; }
   });

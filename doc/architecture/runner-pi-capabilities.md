@@ -21,7 +21,7 @@ boundaries explicit.
 | Sessions | Native Pi JSONL create/load; resume is confined to the execution's private session home and original workspace. Cold `prompt` cannot implicitly load an arbitrary session. |
 | Text and reasoning | Upstream streams text and thought chunks. The common runner's private reasoning policy still applies; provider support does not authorize retention or display. |
 | Native tools | `read`, `grep`, `find`, `ls`, `write`, `edit`, and `bash` pass the immutable extension gate before execution. File roots and read-only mode are checked before and after a permission wait. The host sandbox remains authoritative for shell commands and races. |
-| Permissions | Native tool approval uses ACP `session/request_permission`, with allow once, allow for the session, and deny. Only offered options are accepted. Questions never become approvals. |
+| Permissions | Native tool approval uses ACP `session/request_permission`, with allow once, allow for the session, and deny. Only offered options are accepted. Session grants cover an identical operation and still revalidate paths. Questions never become approvals. |
 | Questions | Pi `select`, `confirm`, `input`, and `editor` map to ACP form elicitation with typed schemas. Decline, cancellation, timeout, malformed replies, and duplicate/late replies cannot become accepted answers. |
 | Semantic tools | Runner-owned loopback HTTP MCP catalogs register under exact `mcp__<server>__<tool>` names. Calls retain the native tool call ID and cancellation signal. Authenticated PRP tool handling owns semantic authorization and durable interactions. Ambient MCP and external MCP servers are not admitted. |
 | Plans and artifacts | Pi has no native structured plan or artifact channel. Paperclip plan and artifact semantic tools remain available through the MCP bridge; native file edits retain bounded, workspace-confined ACP diff projection. Tool text/image results are preserved, and resource blocks are recorded without following URLs. |
@@ -62,7 +62,10 @@ without a shell or PATH lookup. The common command lease must supply:
 - `PI_CODING_AGENT_DIR`: isolated persisted session/auth/settings home.
 - `PAPERCLIP_PI_READ_ONLY`: exactly `0` or `1`.
 - `PAPERCLIP_PI_READ_ROOTS` and `PAPERCLIP_PI_PROTECTED_ROOTS`: JSON arrays of
-  absolute allowed skill/read roots and protected runtime/config roots.
+  absolute allowed skill/read roots and protected runtime/config roots. Assigned
+  skills must use a separate immutable lease outside the protected runtime and
+  executable roots; overlapping roots fail admission. Skill roots are always
+  immutable, even when nested inside a writable workspace.
 - `PAPERCLIP_PI_SYSTEM_INSTRUCTIONS`: admitted instructions, bounded to 32 KiB.
 
 The wrapper synthesizes `PAPERCLIP_PI_RUNTIME_CONFIGURATION` for its child,

@@ -70,7 +70,36 @@ describe("owned Pi runtime extension", () => {
     await writeFile(join(config.readRoots[0]!, "SKILL.md"), "assigned");
     const context = { cwd: config.workspace, ui: { select: vi.fn() } };
     expect(await checkPiNativeTool({ toolName: "read", toolCallId: "r", input: { path: join(config.readRoots[0]!, "SKILL.md") } }, context, config)).toBeNull();
-    expect(await checkPiNativeTool({ toolName: "write", toolCallId: "w", input: { path: join(config.readRoots[0]!, "SKILL.md") } }, context, config)).toMatch("outside");
+    expect(await checkPiNativeTool({ toolName: "write", toolCallId: "w", input: { path: join(config.readRoots[0]!, "SKILL.md") } }, context, config)).toMatch("read-only");
+  });
+
+  it("keeps workspace-nested skills immutable and refuses protected-root overlap", async () => {
+    const { config } = await workspace();
+    const assigned = join(config.workspace, "assigned"); await mkdir(assigned);
+    config.readRoots = [assigned];
+    const context = { cwd: config.workspace, ui: { select: vi.fn() } };
+    expect(await checkPiNativeTool({ toolName: "write", toolCallId: "w", input: { path: join(assigned, "SKILL.md") } }, context, config)).toMatch("read-only");
+    config.readRoots = [config.protectedRoots[0]!];
+    const h = harness();
+    await expect(installPiRuntimeExtension(h.api, config)).rejects.toThrow("overlap");
+    expect(h.api.registerCommand).not.toHaveBeenCalled();
+  });
+
+  it("limits session grants to identical operations and rechecks their paths", async () => {
+    const { config, root } = await workspace(); const h = harness();
+    await installPiRuntimeExtension(h.api, config);
+    const select = vi.fn().mockResolvedValue("Allow for this session");
+    const context = { cwd: config.workspace, ui: { select } };
+    const tool = h.handlers.get("tool_call")!;
+    const input = { path: "target/new" };
+    expect(await tool({ toolName: "write", toolCallId: "a", input }, context)).toBeUndefined();
+    expect(await tool({ toolName: "write", toolCallId: "b", input }, context)).toBeUndefined();
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(await tool({ toolName: "write", toolCallId: "c", input: { path: "different" } }, context)).toBeUndefined();
+    expect(select).toHaveBeenCalledTimes(2);
+    await symlink(join(root, "private"), join(config.workspace, "target"));
+    expect(await tool({ toolName: "write", toolCallId: "d", input }, context)).toMatchObject({ block: true });
+    expect(select).toHaveBeenCalledTimes(2);
   });
 
   it("registers exact authenticated MCP tools with stable idempotency and abort signal", async () => {

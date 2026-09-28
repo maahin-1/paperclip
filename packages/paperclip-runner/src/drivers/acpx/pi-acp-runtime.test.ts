@@ -77,6 +77,18 @@ describe("Pi ACP bridge", () => {
     usage.reset(); expect(usage.response()).toEqual({});
   });
 
+  it("does not invent missing cache totals or zero cost", () => {
+    const usage = new PiTurnUsage();
+    usage.accept({ role: "assistant", timestamp: 1, stopReason: "stop", usage: { input: 4, output: 2 } });
+    expect(usage.response()).toEqual({ usage: {
+      inputTokens: 4, outputTokens: 2, _meta: { paperclipPi: { provenance: "assistant_message_receipts" } },
+    } });
+    usage.accept({ role: "assistant", timestamp: 2, stopReason: "stop", usage: { input: 4, output: 2, cacheRead: 0, cacheWrite: 0, cost: { total: 0 } } });
+    expect(usage.response()).toEqual({ usage: {
+      inputTokens: 8, outputTokens: 4, _meta: { paperclipPi: { provenance: "assistant_message_receipts" } },
+    } });
+  });
+
   it("launches verified paths only and rejects session escapes", async () => {
     const root = await mkdtemp(join(tmpdir(), "paperclip-pi-launch-")); temporary.push(root);
     await mkdir(join(root, "sessions"));

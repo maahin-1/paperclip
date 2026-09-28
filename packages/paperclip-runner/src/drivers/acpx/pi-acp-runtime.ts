@@ -213,9 +213,12 @@ export class PiTurnUsage {
   private seen = new Set<string>();
   private total = { inputTokens: 0, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0, totalTokens: 0 };
   private cost = 0;
+  private unknown = new Set<keyof typeof this.total>();
+  private costObserved = false;
+  private costIncomplete = false;
   private failed = false;
   private observed = false;
-  reset(): void { this.seen.clear(); this.total = { inputTokens: 0, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0, totalTokens: 0 }; this.cost = 0; this.failed = false; this.observed = false; }
+  reset(): void { this.seen.clear(); this.total = { inputTokens: 0, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0, totalTokens: 0 }; this.cost = 0; this.unknown.clear(); this.costObserved = false; this.costIncomplete = false; this.failed = false; this.observed = false; }
   accept(value: unknown): void {
     const message = record(value);
     if (message.role !== "assistant") return;
@@ -226,22 +229,27 @@ export class PiTurnUsage {
     if (this.seen.size >= 8192) throw new Error("Pi usage receipts exceed their bound");
     this.seen.add(key);
     const usage = record(message.usage);
-    const numbers = ["input", "output", "cacheRead", "cacheWrite"].map((name) => usage[name] ?? 0);
-    if (numbers.some((value) => typeof value !== "number" || !Number.isSafeInteger(value) || value < 0)) return;
-    this.observed = true;
-    for (const [index, field] of ["inputTokens", "outputTokens", "cachedReadTokens", "cachedWriteTokens"].entries()) {
-      const name = field as keyof typeof this.total;
-      this.total[name] += numbers[index] as number;
+    const valid = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+    const fields = ["inputTokens", "outputTokens", "cachedReadTokens", "cachedWriteTokens"] as const;
+    const numbers = ["input", "output", "cacheRead", "cacheWrite"].map((name) => usage[name]);
+    for (const [index, name] of fields.entries()) {
+      const value = numbers[index];
+      if (valid(value)) { this.total[name] += value; this.observed = true; }
+      else this.unknown.add(name);
     }
-    this.total.totalTokens = this.total.inputTokens + this.total.outputTokens + this.total.cachedReadTokens + this.total.cachedWriteTokens;
-    if (usage.cost && typeof usage.cost === "object") {
-      const cost = record(usage.cost).total;
-      if (typeof cost === "number" && Number.isFinite(cost) && cost >= 0) this.cost += cost;
-    }
+    const total = valid(usage.totalTokens) ? usage.totalTokens
+      : numbers.every(valid) ? (numbers as number[]).reduce((sum, value) => sum + value, 0) : undefined;
+    if (valid(total)) this.total.totalTokens += total;
+    else this.unknown.add("totalTokens");
+    const cost = usage.cost && typeof usage.cost === "object" ? record(usage.cost).total : undefined;
+    if (typeof cost === "number" && Number.isFinite(cost) && cost >= 0) {
+      this.cost += cost; this.costObserved = true;
+    } else this.costIncomplete = true;
   }
+
   response(): RecordValue {
     return {
-      ...(this.observed ? { usage: { ...this.total, _meta: { paperclipPi: { provenance: "assistant_message_receipts", costUsd: this.cost } } } } : {}),
+      ...(this.observed ? { usage: { ...Object.fromEntries(Object.entries(this.total).filter(([name]) => !this.unknown.has(name as keyof typeof this.total))), _meta: { paperclipPi: { provenance: "assistant_message_receipts", ...(this.costObserved && !this.costIncomplete ? { costUsd: this.cost } : {}) } } } } : {}),
       ...(this.failed ? { _meta: { jetbrains: { air: { version: 1, sessionFailure: { severity: "error", category: "service", title: "Pi provider request failed" } } } } } : {}),
     };
   }

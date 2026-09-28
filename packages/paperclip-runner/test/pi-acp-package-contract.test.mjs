@@ -83,6 +83,7 @@ async function fixture(t, extra = {}) {
 test("actual patched ACP process streams thinking and waits for settlement with usage", async (t) => {
   const f = await fixture(t);
   assert.equal(f.initialized.agentCapabilities._meta.paperclipPi.steering, true);
+  assert.deepEqual(f.initialized.authMethods, []);
   const session = await f.call("session/new", { cwd: join(f.root, "workspace"), mcpServers: [] });
   const result = await f.call("session/prompt", { sessionId: session.sessionId, prompt: [{ type: "text", text: "hello" }] });
   assert.equal(result.stopReason, "end_turn"); assert.equal(result.usage.inputTokens, 11); assert.equal(result.usage.totalTokens, 16);

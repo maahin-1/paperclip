@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { PI_DISTRIBUTION_CLOSURE_SHA256 } from "../src/drivers/acpx/pi-closure-pins.ts";
 import { PI_NODE_DISTRIBUTIONS, PI_NODE_VERSION } from "../src/drivers/acpx/pi-node-pins.ts";
+import { QUALIFIED_ACPX_PROFILES } from "../src/drivers/acpx/qualified-profiles.ts";
 import { inventoryPiRuntimeFiles, verifyPiRuntimeManifest } from "../src/drivers/acpx/pi-verified-runtime.ts";
 
 const run = promisify(execFile);
@@ -17,7 +18,7 @@ const patchPath = join(workspaceRoot, "patches/pi-acp@0.0.33.patch");
 const supportedTargets = new Set(["darwin-arm64", "darwin-x64", "linux-x64"]);
 export const PI_DISTRIBUTION_PINS = Object.freeze({
   wrapper: "0.0.33", runtime: "0.84.2", sdk: "0.26.0", zod: "3.25.76", nodeVersion: PI_NODE_VERSION,
-  wrapperSha256: "d2a2cf67bebedb7cff46b2cebdc98dda8e91f3e64b15f26c660715e5145c7cc6",
+  wrapperSha256: "18375d30e7eca9fddf6c024f49899d6da38c064d8587aa1678fd4c2d70308fbc",
   helperSha256: "57dd03e3d1e59d0191f0dd66f5a809e6c825de3c4b6660bff697686c160a659f",
 });
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -91,6 +92,20 @@ export async function writePiDistributionManifest(runtimeRoot) {
   };
   const verified = await verifyPiRuntimeManifest(runtimeRoot, manifest);
   return { manifest, ...verified };
+}
+
+export function piDistributionBootstrapSource() {
+  return [
+      'const path=require("node:path");',
+      'process.env.PAPERCLIP_PI_NODE_EXECUTABLE=path.join(__dirname,"node/bin/node");',
+      'process.env.PAPERCLIP_PI_ENTRYPOINT=path.join(__dirname,"node_modules/@earendil-works/pi-coding-agent/dist/cli.js");',
+      'process.env.PAPERCLIP_PI_EXTENSION_PATH=path.join(__dirname,"extensions/paperclip.js");',
+      'process.env.PAPERCLIP_PI_MODULE_GUARD_PATH=path.join(__dirname,".paperclip-native-module-guard.cjs");',
+      'const protectedRoots=JSON.parse(process.env.PAPERCLIP_PI_PROTECTED_ROOTS??"[]");if(!Array.isArray(protectedRoots))throw new Error("Invalid Pi protected roots");',
+      'process.env.PAPERCLIP_PI_PROTECTED_ROOTS=JSON.stringify([...protectedRoots,__dirname]);',
+      'import(require("node:url").pathToFileURL(path.join(__dirname,"node_modules/pi-acp/dist/index.js")).href).catch(()=>{process.exitCode=1;});',
+      '',
+  ].join("\n");
 }
 
 /** Build on the target platform. No lifecycle scripts, model requests, or auth. */
@@ -170,15 +185,7 @@ export async function materializePiDistribution({ outputRoot, nodeExecutable, np
       }
     }
     await rm(join(runtimeRoot, "node_modules/.package-lock.json"), { force: true });
-    await writeFile(join(runtimeRoot, "pi-entry.cjs"), [
-      'const path=require("node:path");',
-      'process.env.PAPERCLIP_PI_NODE_EXECUTABLE=path.join(__dirname,"node/bin/node");',
-      'process.env.PAPERCLIP_PI_ENTRYPOINT=path.join(__dirname,"node_modules/@earendil-works/pi-coding-agent/dist/cli.js");',
-      'process.env.PAPERCLIP_PI_EXTENSION_PATH=path.join(__dirname,"extensions/paperclip.js");',
-      'process.env.PAPERCLIP_PI_MODULE_GUARD_PATH=path.join(__dirname,".paperclip-native-module-guard.cjs");',
-      'import(require("node:url").pathToFileURL(path.join(__dirname,"node_modules/pi-acp/dist/index.js")).href).catch(()=>{process.exitCode=1;});',
-      '',
-    ].join("\n"));
+    await writeFile(join(runtimeRoot, "pi-entry.cjs"), piDistributionBootstrapSource());
     for (const item of await readdir(staging)) if (item !== "runtime") await rm(join(staging, item), { recursive: true, force: true });
     const { manifest, manifestDigest } = await writePiDistributionManifest(runtimeRoot);
     const entries = await Promise.all(manifest.files.map(async (file) => {
@@ -200,7 +207,12 @@ export async function materializePiDistribution({ outputRoot, nodeExecutable, np
     await rename(staging, output);
     const finalRoot = join(output, "runtime");
     const binding = await verifyPiRuntimeManifest(finalRoot, manifest);
-    return { outputRoot: output, runtimeRoot: finalRoot, manifestPath: join(output, "pi-distribution.json"), metadata, ...binding };
+    return {
+      version: PI_DISTRIBUTION_PINS.runtime,
+      profileDigest: QUALIFIED_ACPX_PROFILES.pi.commandDigest,
+      closureDigest: `sha256:${nativeClosureSha256}`,
+      outputRoot: output, runtimeRoot: finalRoot, manifestPath: join(output, "pi-distribution.json"), metadata, ...binding,
+    };
   } catch (error) { await rm(staging, { recursive: true, force: true }); throw error; }
 }
 

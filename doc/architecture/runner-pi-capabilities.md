@@ -190,3 +190,27 @@ archive hashes were checked against the [official Node release checksums](https:
 The x64 closure pins combine the identical locked package/resource graph with each
 verified official x64 interpreter. They are candidate artifact identity, not proof
 that those targets have executed successfully.
+
+### Installation authority and token semantics
+
+`verifyPiInstallation(profile)` admits only profile version 2 and the source-owned
+Pi identity. It resolves `provider-assets/pi/<platform>-<arch>` inside the verified
+Runner package, checks the complete runtime against source-pinned closure hashes,
+and opens a guarded immutable native snapshot. The snapshot bootstrap binds Node,
+Pi, and the extension relative to itself, overriding inherited launch paths.
+Unconfigured installations return an explicit bound-credential error and expose
+no terminal login option. The materializer returns the runtime `version`,
+`profileDigest`, and complete `closureDigest` for the provider-pack manifest.
+
+For the exact OpenRouter qualification model, Pi AI 0.84.2's
+`dist/providers/data/openrouter.json` selects `openai-completions`. Its
+`dist/api/openai-completions.js` assigns `usage.output` from `completion_tokens`,
+which already includes reasoning tokens; `usage.reasoning` is a subset. PRP must
+therefore use zero additional thought tokens for this pinned profile, rather than
+counting that subset twice. Missing cache categories remain unknown at the wrapper
+receipt boundary. `usage.cost` is a Pi catalog pricing estimate, never an invoice.
+
+The closed snapshot has been exercised against actual pinned Pi through ACP
+initialization and the missing-credential admission path without a model call.
+The exact reported `currentModelId` and billable receipt still need credentialed
+local and Linux/Daytona qualification.

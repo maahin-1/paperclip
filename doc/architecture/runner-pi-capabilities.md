@@ -228,3 +228,11 @@ cannot continue invisibly. Successful compaction reports
 `assistant_message_and_compaction_receipts` provenance. Pi's summarization retry
 helper discards failed-attempt usage, so any retry or missing compaction receipt
 invalidates complete-turn token/cost totals instead of inventing complete coverage.
+
+The retained [macOS ARM64 provider-pack admission proof](../../packages/paperclip-runner/test-fixtures/pi-acp/offline-provider-pack-proof.darwin-arm64.json)
+records the exact source revision, pack/runtime hashes, declared model, and
+missing-credential result. It contains no credentials or provider session IDs and
+records zero paid calls. That pack was built at `e3658cd0a6d26af63d59201a47039af7e6f33510`,
+before the later Daytona input-contract and evidence-retention commits. This
+proves packaged offline admission only; it does not claim live model, interaction,
+or Daytona qualification.

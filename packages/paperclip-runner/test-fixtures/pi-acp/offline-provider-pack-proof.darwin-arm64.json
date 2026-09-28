@@ -1,0 +1,78 @@
+{
+  "schema": "paperclip.pi-provider-pack-offline-proof.v1",
+  "recordedAt": "2026-09-28T16:58:36.497Z",
+  "classification": "offline_candidate_admission",
+  "source": {
+    "runnerRevision": "e3658cd0a6d26af63d59201a47039af7e6f33510",
+    "distDigest": "sha256:7c6f7254edcdaf16e727d55f16cf59b596042a7e5d64f34ac819771e46e3f3bb",
+    "bridgeDigest": "sha256:d38c8843c3b5d6857944864aae1e348f98e91a454831a7e3f4d5dfd62de43e23",
+    "productionLockDigest": "sha256:38bc9b884fe535e668d896bd9c8f7ec5449a75d52bd4c4ae452ee0dc623ddefc",
+    "note": "Pack built at the recorded runner revision before the subsequent 20d641be3 Daytona input-contract commit and this evidence-retention commit. It is not evidence that later source changes were executed."
+  },
+  "environment": {
+    "platform": "darwin",
+    "architecture": "arm64",
+    "nodeVersion": "24.19.0",
+    "execution": "local macOS ARM64; immutable guarded provider snapshot",
+    "packageManager": "pnpm@9.15.4"
+  },
+  "candidate": {
+    "agent": "pi",
+    "qualification": "pending",
+    "agentProfileVersion": 2,
+    "declaredModel": "openrouter/deepseek/deepseek-v4-flash-0731",
+    "reportedModelId": null,
+    "modelVerification": "not_performed_authentication_missing",
+    "wrapperVersion": "0.0.33",
+    "runtimeVersion": "0.84.2",
+    "profileDigest": "sha256:b18deb44976b92e5e6b4f874f6e28dbbf23b34c917879ee3f7cdc03472919476",
+    "closureDigest": "sha256:2fde022b3714c497f352e628789c4dd47b6446351dc69779293b3a0eafcbc17f",
+    "assetTreeDigest": "sha256:48ac0fe511df6550cf7b3de06e78265dda1687bcb0f11f4bb72358a7e75d4173",
+    "distributionManifestDigest": "sha256:43a6ced3b8926dfefd8c46c67cfb113fdca531caadd79978053edacfdc8b70f2",
+    "wrapperDigest": "sha256:80c0e302e75b39d71404c69afb2d5182c468ccdee68bfe8b09f1f40e20a47fb4",
+    "helperDigest": "sha256:4333d284ff06ab1195e49630041f0b03a486a92fc678100525ad107e0982dba1",
+    "extensionDigest": "sha256:87f5348be5da3fb505baea1208de7b62e88ec714adcf0ac0a16a51952f57e2da"
+  },
+  "providerPack": {
+    "manifestDigest": "sha256:fc9a547253311508a20c197377fea5cfdaaaa7b6a772fd0de30b49bce9771e75",
+    "portableNodeDigest": "sha256:27db838bb204ef7c21df2931f5656e4c8fb32e6e947f363a402b49714d32b5b1",
+    "piNodeDigest": "sha256:27db838bb204ef7c21df2931f5656e4c8fb32e6e947f363a402b49714d32b5b1",
+    "acpxSidecarDigest": "sha256:6606044fe3fc400f3b7721f95e925a8508266a2fcd44c72dae29148644acb36e"
+  },
+  "observed": {
+    "closedSnapshotLaunch": true,
+    "acpInitialize": "passed",
+    "authMethods": [],
+    "capabilities": {
+      "version": 1,
+      "steering": true,
+      "queuedFollowUp": true,
+      "questions": [
+        "select",
+        "confirm",
+        "input",
+        "editor"
+      ],
+      "nativePermissions": true,
+      "promptUsage": true,
+      "nativePlan": false,
+      "pendingRequestRecovery": "live-process-only"
+    },
+    "sessionNew": "rejected_authentication_missing",
+    "expectedError": "Bind the configured OpenRouter API credential to this Paperclip runtime.",
+    "missingCredentialRejected": true
+  },
+  "usage": {
+    "providerCalls": 0,
+    "promptRequests": 0,
+    "paidProviderCalls": 0,
+    "credentials": "none",
+    "spentUsd": 0
+  },
+  "limitations": [
+    "No provider authentication, model prompt, or reported currentModelId was verified.",
+    "Native tool execution, permissions, questions, and semantic MCP calls were not exercised by this pack-launch probe.",
+    "Linux x64, macOS x64, and Daytona execution were not exercised.",
+    "Production qualification remains pending."
+  ]
+}

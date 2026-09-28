@@ -128,12 +128,16 @@ Daytona claims require the separate live product qualification.
 
 | Capability / Codex benchmark | Copilot native and ACP exposure | Runner and user-visible surface | Evidence / remaining gap |
 | --- | --- | --- | --- |
+| Authentication | Initialize advertises `copilot-login`, including terminal-auth command, args and label. | Explicit company-bound `COPILOT_GITHUB_TOKEN`; missing binding fails before executable admission. Terminal login is not launched. | Packaged initialize and host cleanup/retry test; terminal-auth remains intentionally unused because it would introduce ambient interactive identity. |
+| Prompt attachments | Initialize advertises images and embedded context, and explicitly denies audio input. | Current runner prompt contract sends text. Image/context input blocks are not forwarded. | Observed initialize; P1 add validated attachment inputs. Audio is confirmed unsupported in this ACP advertisement. |
 | Active turn steering (`turn/steer`) | Native SDK steering exists. ACP `session/prompt` unconditionally aborts the active session before sending a new prompt. | Unsupported active steering; do not impersonate it with concurrent prompts. | Source; P1 add a versioned upstream ACP steering method. |
 | Ordered follow-ups | Native pending-message controls and `pending_messages.modified`; notification has no queue body. | Lifecycle activity only. Scheduler can start a subsequent completed-turn prompt, but that is not native queue delivery. | Source; P1 require queue acknowledgment and ordering contract. |
 | Interruption (`turn/interrupt`) | Standard `session/cancel`, active prompt abort and process shutdown. | Shared cancellation and bounded cleanup. | Source; authenticated cancellation/process-tree test pending. |
 | Session recovery/history | `session/load`, list and close; native history and rewind richer. | Exact identity/warm continuation through shared ACPX host; never replay approvals or mutations. | Initialize wire; restart/load history and pending-input recovery unqualified. |
+| Session list / explicit close | Initialize advertises both methods. | Runner owns its selected-session registry and process cleanup; it does not call Copilot's list or explicit close methods. | Observed initialize; P2 company-scoped history/session management before consuming these interfaces. |
 | Fork / history paging | Native CLI/SDK capabilities exist; no ACP fork advertised. | Unsupported. | Confirmed absent from initialize advertisement, not proof native harness lacks it; P2 upstream extension. |
 | Tools / correlation | Standard `tool_call`/`tool_call_update`; parent identity in `_meta["github.com/copilot"].agentId`. HTTP/SSE MCP supported. | Shared tool activity, authenticated runner-owned MCP bridge. | Real create/bash/read_bash traffic; semantic tools/company boundary live proof pending. |
+| MCP transport selection | Both HTTP and SSE are advertised. | The assigned Paperclip gateway uses the controlled HTTP bridge. Arbitrary SSE endpoint configuration is not exposed. | Observed initialize; SSE remains unused, P2 only if a governed connection requires it. |
 | Scoped approvals | `session/request_permission`, actual options allow_once/allow_always/reject_once. | Shared durable permissions; only received decisions offered, policy enforced. | Wire ID 0 denied before file creation. Ask-mode recovery and wider tool denial unqualified. |
 | Structured questions | Native `ask_user` callback and `user_input.requested`; current ACP adapter does not wire the responder. | Emits capability-gap notice if native notification arrives; cannot claim answer delivery. | Actual agent-mode tool list omits `ask_user` with no suppression flag; other modes unverified. P0 qualify blocking interaction behavior. |
 | Plan approval | Native `exit_plan_mode` callback; notification contains plan content/actions but lacks qualified ACP responder. | Capability-gap notice only; never synthesize plan acceptance. | Agent-mode tool list omits exit_plan_mode. Plan mode requires explicit qualification; P0. |
@@ -250,3 +254,40 @@ schema validation, meaningful display details, and stale/cross-session rejection
 Admission error classification distinguishes missing authentication, account or
 organization denial, and unavailable explicit models using fixed safe messages;
 unrelated runner integrity errors keep their original classification.
+
+## Complete provider-pack proof
+
+The [retained packaged-launch evidence](../../packages/paperclip-runner/test/fixtures/copilot-provider-pack-darwin-arm64-1.0.88.json)
+records clean source revision `9288943881a3667f25b38e49728120dd45c20279`,
+provider-pack digest `sha256:4d2212dd82e5ae1bbccd36087f99576a44c98f086c65f8d98f9f470669811880`,
+the profile and native closure digests, and the exact protocol-1 initialize response.
+The complete pack was built with standalone Node 24.19.0. Its packaged
+`verifyAcpxProfileInstallation` registry acquired a private native command lease,
+launched Copilot 1.0.88, preserved numeric request ID 0, and observed clean EOF
+settlement. The native terminal-login command path is sanitized in the fixture.
+
+The smoke uses `COPILOT_OFFLINE=true` and an explicitly configured loopback
+metadata-only provider; that server received zero requests, and no prompt was
+sent. This low-level packaging test deliberately does not claim production
+authentication or model availability. The real host separately rejects absent,
+blank, or NUL-containing explicit credentials before opening a command lease;
+ambient `GH_TOKEN` and `GITHUB_TOKEN` cannot satisfy admission. A host regression
+verifies that this failure releases ownership and permits a subsequent explicitly
+bound retry without spawning a provider during the test.
+
+Probe attempts are accounted for: an initial smoke client closed stdin before
+initialize completed and was corrected; a bare unauthenticated initialize then
+hit the 20-second deadline; a metadata-fixture initialize passed; the final pack
+was rebuilt with the authentication preflight and passed again. All four attempts
+were local with no credentials or inference, with $0 model and infrastructure
+spend. There was no Daytona deployment. The candidate remains unqualified.
+
+```sh
+/path/to/standalone/node packages/paperclip-runner/scripts/build-provider-pack.mjs /absolute/provider-pack --candidate-providers=copilot
+/absolute/provider-pack/node_modules/node/bin/node packages/paperclip-runner/scripts/copilot-provider-pack-smoke.mjs /absolute/provider-pack
+```
+
+Both Copilot builder scripts are explicit Daytona image hash inputs. The selected
+`copilot` candidate also changes image identity, while manifest qualification stays
+`pending`. Linux x64 binaries are pinned and buildable; live Linux/Daytona behavior
+still requires the qualification cases above.

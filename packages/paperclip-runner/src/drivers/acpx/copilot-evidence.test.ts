@@ -7,6 +7,16 @@ function fixture(name: string) {
 }
 
 describe("Copilot pinned executable evidence", () => {
+  it("retains a complete packaged native launch without promoting offline proof to qualification", () => {
+    const evidence = fixture("copilot-provider-pack-darwin-arm64-1.0.88.json");
+    expect(evidence.sourceRevision).toMatch(/^[a-f0-9]{40}$/);
+    expect(evidence.providerPackDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(evidence.candidate).toMatchObject({ version: "1.0.88", qualification: "pending" });
+    expect(evidence.initialize).toMatchObject({ protocolVersion: 1, agentInfo: { version: "1.0.88" } });
+    expect(evidence).toMatchObject({ initializeRequestId: 0, cleanExit: true, inheritedCredentials: false,
+      promptSent: false, fixtureRequests: [], costUsd: 0, missingCredentialPreflight: "COPILOT_AUTH_REQUIRED" });
+    expect(JSON.stringify(evidence)).not.toMatch(/\/Users\/|\/private\/var\/|\/tmp\/paperclip-/);
+  });
   it("accounts for every inventoried event and field without pretending all were observed", () => {
     const inventory = fixture("copilot-event-inventory-1.0.88.json");
     expect(inventory.events).toHaveLength(150);

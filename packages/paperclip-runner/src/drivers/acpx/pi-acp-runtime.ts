@@ -222,12 +222,15 @@ export class PiTurnUsage {
   accept(value: unknown): void {
     const message = record(value);
     if (message.role !== "assistant") return;
-    this.failed = message.stopReason === "error";
-    if (!message.usage || typeof message.usage !== "object") return;
+    if (!message.usage || typeof message.usage !== "object") {
+      this.failed = message.stopReason === "error";
+      return;
+    }
     const key = JSON.stringify([message.timestamp, message.id, message.usage, message.content]);
     if (this.seen.has(key)) return;
     if (this.seen.size >= 8192) throw new Error("Pi usage receipts exceed their bound");
     this.seen.add(key);
+    this.failed = message.stopReason === "error";
     const usage = record(message.usage);
     const valid = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
     const fields = ["inputTokens", "outputTokens", "cachedReadTokens", "cachedWriteTokens"] as const;
@@ -249,7 +252,7 @@ export class PiTurnUsage {
 
   response(): RecordValue {
     return {
-      ...(this.observed ? { usage: { ...Object.fromEntries(Object.entries(this.total).filter(([name]) => !this.unknown.has(name as keyof typeof this.total))), _meta: { paperclipPi: { provenance: "assistant_message_receipts", ...(this.costObserved && !this.costIncomplete ? { costUsd: this.cost } : {}) } } } } : {}),
+      ...(this.observed ? { usage: { ...Object.fromEntries(Object.entries(this.total).filter(([name]) => !this.unknown.has(name as keyof typeof this.total))), _meta: { paperclipPi: { provenance: "assistant_message_receipts", ...(this.costObserved && !this.costIncomplete ? { costUsd: this.cost, costSource: "pi_pricing_estimate" } : {}) } } } } : {}),
       ...(this.failed ? { _meta: { jetbrains: { air: { version: 1, sessionFailure: { severity: "error", category: "service", title: "Pi provider request failed" } } } } } : {}),
     };
   }

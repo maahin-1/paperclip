@@ -426,7 +426,7 @@ diff --git a/dist/paperclip-runtime.js b/dist/paperclip-runtime.js
 new file mode 100644
 --- /dev/null
 +++ b/dist/paperclip-runtime.js
-@@ -0,0 +1,256 @@
+@@ -0,0 +1,259 @@
 +/** Source for the helper embedded in patches/pi-acp@0.0.33.patch. */
 +import { StringDecoder } from "node:string_decoder";
 +import { isAbsolute, relative, resolve, sep } from "node:path";
@@ -651,12 +651,15 @@ new file mode 100644
 +  accept(value         )       {
 +    const message = record(value);
 +    if (message.role !== "assistant") return;
-+    this.failed = message.stopReason === "error";
-+    if (!message.usage || typeof message.usage !== "object") return;
++    if (!message.usage || typeof message.usage !== "object") {
++      this.failed = message.stopReason === "error";
++      return;
++    }
 +    const key = JSON.stringify([message.timestamp, message.id, message.usage, message.content]);
 +    if (this.seen.has(key)) return;
 +    if (this.seen.size >= 8192) throw new Error("Pi usage receipts exceed their bound");
 +    this.seen.add(key);
++    this.failed = message.stopReason === "error";
 +    const usage = record(message.usage);
 +    const valid = (value         )                  => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 +    const fields = ["inputTokens", "outputTokens", "cachedReadTokens", "cachedWriteTokens"]         ;
@@ -678,7 +681,7 @@ new file mode 100644
 +
 +  response()              {
 +    return {
-+      ...(this.observed ? { usage: { ...Object.fromEntries(Object.entries(this.total).filter(([name]) => !this.unknown.has(name                           ))), _meta: { paperclipPi: { provenance: "assistant_message_receipts", ...(this.costObserved && !this.costIncomplete ? { costUsd: this.cost } : {}) } } } } : {}),
++      ...(this.observed ? { usage: { ...Object.fromEntries(Object.entries(this.total).filter(([name]) => !this.unknown.has(name                           ))), _meta: { paperclipPi: { provenance: "assistant_message_receipts", ...(this.costObserved && !this.costIncomplete ? { costUsd: this.cost, costSource: "pi_pricing_estimate" } : {}) } } } } : {}),
 +      ...(this.failed ? { _meta: { jetbrains: { air: { version: 1, sessionFailure: { severity: "error", category: "service", title: "Pi provider request failed" } } } } } : {}),
 +    };
 +  }

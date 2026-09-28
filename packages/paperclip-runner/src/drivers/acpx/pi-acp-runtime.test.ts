@@ -73,7 +73,9 @@ describe("Pi ACP bridge", () => {
     expect(usage.response()).toMatchObject({ usage: { totalTokens: 10 }, _meta: { jetbrains: { air: { sessionFailure: { severity: "error" } } } } });
     usage.accept({ ...failed, timestamp: 2, stopReason: "stop" });
     expect(usage.response()).toMatchObject({ usage: { inputTokens: 8, totalTokens: 20 } });
+    usage.accept(failed); // A duplicate old failure cannot undo a successful retry.
     expect(usage.response()._meta).toBeUndefined();
+    expect(usage.response()).toMatchObject({ usage: { _meta: { paperclipPi: { costUsd: 0.02, costSource: "pi_pricing_estimate" } } } });
     usage.reset(); expect(usage.response()).toEqual({});
   });
 

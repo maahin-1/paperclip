@@ -23,7 +23,7 @@ boundaries explicit.
 | Native tools | `read`, `grep`, `find`, `ls`, `write`, `edit`, and `bash` pass the immutable extension gate before execution. File roots and read-only mode are checked before and after a permission wait. The host sandbox remains authoritative for shell commands and races. |
 | Permissions | Native tool approval uses ACP `session/request_permission`, with allow once, allow for the session, and deny. Only offered options are accepted. Session grants cover an identical operation and still revalidate paths. Questions never become approvals. |
 | Questions | Pi `select`, `confirm`, `input`, and `editor` map to ACP form elicitation with typed schemas. Decline, cancellation, timeout, malformed replies, and duplicate/late replies cannot become accepted answers. |
-| Semantic tools | Runner-owned loopback HTTP MCP catalogs register under exact `mcp__<server>__<tool>` names. Calls retain the native tool call ID and cancellation signal. Authenticated PRP tool handling owns semantic authorization and durable interactions. Ambient MCP and external MCP servers are not admitted. |
+| Semantic tools | Runner-bound HTTP MCP catalogs (numeric loopback HTTP or assigned HTTPS gateways) register under exact `mcp__<server>__<tool>` names. Calls retain the native tool call ID and cancellation signal. Authenticated PRP tool handling owns semantic authorization and durable interactions. Only the exact session-assigned gateway URL and credential are used, with redirects disabled. Ambient and unassigned MCP servers are not admitted. |
 | Plans and artifacts | Pi has no native structured plan or artifact channel. Paperclip plan and artifact semantic tools remain available through the MCP bridge; native file edits retain bounded, workspace-confined ACP diff projection. Tool text/image results are preserved, and resource blocks are recorded without following URLs. |
 | Steering | Capability-negotiated `pi/steer` issues native RPC `steer` during an active turn. `pi/follow_up` explicitly queues native RPC `follow_up`. Neither is inferred from a second ACP prompt. Each takes `{sessionId, message}` and returns `{accepted: true}`. |
 | Usage | Prompt results sum actual assistant message usage receipts across continuations. Input, output, cache reads/writes, total tokens and Pi-reported pricing estimates have provenance. Context-window occupancy is not billed usage. No receipt means no usage assertion; absent cache or cost fields remain unknown. Pi calculates cost from its model catalog rates, so this is not an authoritative provider bill. |
@@ -224,7 +224,7 @@ initialization and the missing-credential admission path without a model call.
 The exact reported `currentModelId` and billable receipt still need credentialed
 local and Linux/Daytona qualification.
 
-Profile version 2 declaration digest: `sha256:5ed73f923b24bf203cf39d6c5dedd5dfd21e94efcb2c2580b4adf53f1b91fd2f`. It hashes the versioned
+Profile version 2 declaration digest: `sha256:c577a771778febe24b920388da77f6143971b8eec29e1ba9a433dac5b76de3cd`. It hashes the versioned
 profile domain, patched wrapper source and platform closure pins. Every native
 closure remains independently checked at launch. Version 1 warm sessions cannot
 be reused with this integration.

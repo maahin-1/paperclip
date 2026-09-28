@@ -27,15 +27,48 @@ function harness() {
 }
 
 describe("owned Pi runtime extension", () => {
-  it("requires explicit isolated configuration and loopback authentication", () => {
+  it("requires explicit assigned configuration, authenticated HTTPS or numeric loopback HTTP", () => {
     expect(() => readPiRuntimeConfiguration({})).toThrow("missing");
     const value = { workspace: "/work/project", readOnly: false, readRoots: [], protectedRoots: [], instructions: "", servers: [{ type: "http", name: "paperclip", url: "http://127.0.0.1:1234/mcp", headers: [{ name: "Authorization", value: "Bearer 1234567890123456" }] }] };
     const parse = () => readPiRuntimeConfiguration({ PAPERCLIP_PI_RUNTIME_CONFIGURATION: JSON.stringify(value) });
     expect(parse().servers).toHaveLength(1);
-    value.servers[0]!.url = "https://127.0.0.1.evil.test/mcp";
-    expect(parse).toThrow("loopback");
-    value.servers[0]!.url = "http://user:password@127.0.0.1/mcp";
-    expect(parse).toThrow("loopback");
+    for (const url of ["http://127.0.0.1.evil.test/mcp", "http://paperclip.example/mcp", "http://localhost/mcp", "http://user:password@127.0.0.1/mcp", "https://user:password@paperclip.example/mcp", "https://paperclip.example/mcp#unbound", "file:///tmp/mcp"]) {
+      value.servers[0]!.url = url;
+      expect(parse).toThrow("requires HTTPS or numeric loopback HTTP");
+    }
+    value.servers[0]!.url = "https://paperclip.example/mcp/gateway";
+    value.servers[0]!.headers = [];
+    expect(parse).toThrow("authentication");
+  });
+
+  it("initializes and executes only the exact assigned HTTPS gateway with its bound credential", async () => {
+    const { config } = await workspace(); const h = harness();
+    const endpoint = "https://paperclip.example/api/mcp/gateway/assigned";
+    const authorization = "Bearer 1234567890123456";
+    const assigned = readPiRuntimeConfiguration({ PAPERCLIP_PI_RUNTIME_CONFIGURATION: JSON.stringify({
+      ...config, servers: [{ type: "http", name: "paperclip-assigned", url: endpoint, headers: [{ name: "Authorization", value: authorization }] }],
+    }) });
+    const fetch_ = vi.fn<typeof fetch>(async (_url, init) => {
+      const body = JSON.parse(String(init!.body));
+      const result = body.method === "tools/list"
+        ? { tools: [{ name: "report_progress", description: "Report progress", inputSchema: { type: "object", properties: {} } }] }
+        : body.method === "tools/call" ? { content: [{ type: "text", text: "recorded" }] } : {};
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }));
+    });
+    await installPiRuntimeExtension(h.api, assigned, (server, method, params, id, signal) => piMcpRequest(server, method, params, id, signal, fetch_));
+    expect(h.tools).toHaveLength(1);
+    expect(h.tools[0]!.name).toBe("mcp__paperclip-assigned__report_progress");
+    const signal = new AbortController().signal;
+    await expect(h.tools[0]!.execute("assigned-call-1", { text: "done" }, signal)).resolves.toMatchObject({ content: [{ text: "recorded" }] });
+    expect(fetch_.mock.calls.map(([, init]) => JSON.parse(String(init!.body)).method)).toEqual(["initialize", "tools/list", "tools/call"]);
+    for (const [url, init] of fetch_.mock.calls) {
+      expect(url).toBe(endpoint);
+      expect(init).toMatchObject({ method: "POST", redirect: "error", headers: { Authorization: authorization } });
+    }
+    expect(JSON.parse(String(fetch_.mock.calls.at(-1)![1]!.body))).toEqual({ jsonrpc: "2.0", id: "assigned-call-1", method: "tools/call", params: { name: "report_progress", arguments: { text: "done" } } });
+    const context = { cwd: config.workspace, ui: { select: vi.fn() } };
+    expect(await h.handlers.get("tool_call")!({ toolName: "mcp__unassigned__report_progress", toolCallId: "unassigned", input: {} }, context)).toMatchObject({ block: true });
+    expect(fetch_).toHaveBeenCalledTimes(3);
   });
 
   it("denies escapes and read-only mutations before requesting provider permission", async () => {

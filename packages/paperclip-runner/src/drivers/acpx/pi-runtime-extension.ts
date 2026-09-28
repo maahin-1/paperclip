@@ -79,8 +79,11 @@ export function readPiRuntimeConfiguration(environment: NodeJS.ProcessEnv): PiRu
     names.add(server.name);
     if (typeof server.url !== "string") throw new Error("Pi MCP endpoint is invalid");
     const url = new URL(server.url);
-    if (!['http:', 'https:'].includes(url.protocol) || !['127.0.0.1', '[::1]'].includes(url.hostname) || url.username || url.password || url.hash) {
-      throw new Error("Pi MCP endpoint must be a runner-owned loopback endpoint");
+    // Only session-bound gateways reach this configuration. Match the host's
+    // assigned transport policy: HTTPS remotely, cleartext only on loopback.
+    const cleartextLoopback = url.protocol === "http:" && ["127.0.0.1", "[::1]"].includes(url.hostname);
+    if ((url.protocol !== "https:" && !cleartextLoopback) || url.username || url.password || url.hash) {
+      throw new Error("Pi assigned MCP endpoint requires HTTPS or numeric loopback HTTP");
     }
     if (!Array.isArray(server.headers) || server.headers.length !== 1) throw new Error("Pi MCP authentication is invalid");
     const header = asRecord(server.headers[0]);

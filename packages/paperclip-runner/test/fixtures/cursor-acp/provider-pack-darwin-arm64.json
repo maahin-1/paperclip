@@ -1,6 +1,6 @@
 {
   "schema": "paperclip-runner/remote-provider-pack/v1",
-  "digest": "sha256:2f791844619982531282197e8554c2d1e1a2a031bd92e1abf78dae087fc80af6",
+  "digest": "sha256:480ae2eaa7a61852533286648911304fa1e47d2e40e80dcc19f0cce0149cb77e",
   "payload": {
     "pins": {
       "nodeMinimum": "24.11.0",
@@ -14,9 +14,9 @@
       "platform": "darwin",
       "architecture": "arm64"
     },
-    "runnerSourceRevision": "f4bb4a5c316acf12f08a2caf8b9a0ad311588210",
-    "distDigest": "sha256:364a72974524c442e8f5a876c3cfe85b071fdb9ab154dad63ac221f7d32b61df",
-    "bridgeDigest": "sha256:9f4f46c692317ad4a2a9558554695f5e35824f78084924fcc4ce6c2b9a45d7d5",
+    "runnerSourceRevision": "1055c13f8cffd8c06070eb6403d3beff83e64374",
+    "distDigest": "sha256:4f7303572ec9f64a54b9fc8d766c007c88119711b601a0294b54a81367ddd888",
+    "bridgeDigest": "sha256:acc33db0c5c261aa4e9792f8cbbf8b7edff5ff6234555c20d72ea12c1388d8d9",
     "acpxProfileDigests": {
       "claude": "sha256:9d73d1f0f121fb96cc8badb28c22d5bff02d8582eb2e40360a81c189e1b9422a",
       "codex": "sha256:c4538599d1ab767db5dff50934f13bb5ba313a59d9c4a83e993fac4617ea63d3"
@@ -38,7 +38,7 @@
       },
       "productionLock": {
         "path": "pnpm-lock.yaml",
-        "sha256": "sha256:774e3070ecba7bedaf70502a1a85bc05df535db1b34462b389de49031b6b8232"
+        "sha256": "sha256:e0c928a494f90ddad3c00791e83f09315ee8c82df2a0418a809dcf93649a8ab3"
       },
       "opencodeCommand": {
         "path": "node_modules/.bin/opencode",
@@ -50,11 +50,11 @@
       },
       "opencodeProxy": {
         "path": "dist/cli/opencode-app-server-proxy.cjs",
-        "sha256": "sha256:4b5599705325483dc5922dde126435eb102153acadca367163525fbfc1676a5c"
+        "sha256": "sha256:26c685c57e196d94cf4524b000b5c7d81a66bb11c8687a3a4944c7445af785f0"
       },
       "acpxSidecar": {
         "path": "dist/cli/acpx-runtime-sidecar.cjs",
-        "sha256": "sha256:2a11a1abf785215589219eab0f5f87ad30e2a46f78bebfd31f5df7e7bc258294"
+        "sha256": "sha256:731d577d16afb6eccc03328261ec7bc9e21f302e9154c99185cc2410283facfa"
       }
     }
   }

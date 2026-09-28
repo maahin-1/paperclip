@@ -1,8 +1,8 @@
 {
   "schema": "paperclip-cursor-offline-pack-proof/v1",
-  "capturedAt": "2026-09-28T17:11:14.939Z",
-  "runnerSourceRevision": "f4bb4a5c316acf12f08a2caf8b9a0ad311588210",
-  "packDigest": "sha256:2f791844619982531282197e8554c2d1e1a2a031bd92e1abf78dae087fc80af6",
+  "capturedAt": "2026-09-28T17:33:30.123Z",
+  "runnerSourceRevision": "1055c13f8cffd8c06070eb6403d3beff83e64374",
+  "packDigest": "sha256:480ae2eaa7a61852533286648911304fa1e47d2e40e80dcc19f0cce0149cb77e",
   "target": {
     "platform": "darwin",
     "architecture": "arm64"
@@ -15,7 +15,7 @@
     "path": "provider-assets/cursor/darwin-arm64",
     "sha256": "sha256:3b6de19114d4df62f648604025a0d71937dfa7c2b15b397cce5da2c5da268994"
   },
-  "productionLock": "sha256:774e3070ecba7bedaf70502a1a85bc05df535db1b34462b389de49031b6b8232",
+  "productionLock": "sha256:e0c928a494f90ddad3c00791e83f09315ee8c82df2a0418a809dcf93649a8ab3",
   "launch": {
     "entrypoint": "verified bundled node + index.js",
     "arguments": [
@@ -24,7 +24,8 @@
       "acp"
     ],
     "credentials": "none; private home/config/data/cache; memory credential store",
-    "verification": "whole closure digest verification, retained immutable native snapshot, closed module bootstrap"
+    "verification": "generic profile installation registry, whole closure digest verification, retained immutable native snapshot, closed module bootstrap",
+    "modelAdmission": "offline-installation-probe is a factory identity sentinel only; no ACP model selection or prompt; model remains unverified"
   },
   "requests": [
     {

@@ -1,5 +1,5 @@
-import { basename, dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { resolveRunnerProviderAssetsRoot } from "./provider-assets-root.js";
 import { verifyNativeAcpxInstallation, type VerifiedAcpxInstallation } from "./installation-integrity.js";
 import { COPILOT_LAUNCH_ARGUMENTS, COPILOT_VERSION } from "./copilot-profile.js";
 import { QUALIFIED_ACPX_PROFILES, type QualifiedAcpxProfile } from "./qualified-profiles.js";
@@ -23,7 +23,7 @@ export async function verifyCopilotInstallation(profile: QualifiedAcpxProfile): 
   if (!Object.prototype.hasOwnProperty.call(COPILOT_CLOSURE_SHA256, platform)) {
     throw new Error(`Copilot native distribution is not pinned for ${platform}`);
   }
-  const distributionRoot = join(ownedPackageRoot(), "provider-assets", "copilot", platform);
+  const distributionRoot = join(resolveRunnerProviderAssetsRoot(import.meta.url, "copilot"), platform);
   const native = await verifyNativeAcpxInstallation({
     distributionRoot,
     manifestPath: join(distributionRoot, ".paperclip-copilot-closure.json"),
@@ -36,19 +36,3 @@ export async function verifyCopilotInstallation(profile: QualifiedAcpxProfile): 
   return Object.freeze({ ...native, commandDigest: expected.commandDigest });
 }
 
-function ownedPackageRoot(): string {
-  const modulePath = fileURLToPath(import.meta.url);
-  const directory = dirname(modulePath);
-  if (basename(directory) === "acpx" && basename(dirname(directory)) === "drivers"
-    && ["src", "dist"].includes(basename(dirname(dirname(directory))))
-    && /^copilot-installation\.(?:ts|js)$/.test(basename(modulePath))) {
-    return resolve(directory, "../../..");
-  }
-  // The verified CommonJS entrypoint replaces import.meta.url with its own URL;
-  // the bundled ESM entrypoint has the same runtime layout.
-  if (basename(directory) === "cli" && basename(dirname(directory)) === "dist"
-    && /^acpx-runtime-sidecar\.(?:cjs|js)$/.test(basename(modulePath))) {
-    return resolve(directory, "../..");
-  }
-  throw new Error("Copilot assets require the runner's build-owned module layout");
-}

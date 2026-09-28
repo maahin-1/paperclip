@@ -37,7 +37,7 @@ export function createCursorProfileExtensionAdapter(context: {
 }) {
   const normalizeNotification = createCursorNotificationNormalizer(context);
   const normalizeSubagent = createCursorSubagentNormalizer();
-  const children = new Map<string, { toolCallId: string; agentId?: string }>();
+  const children = new Map<string, { toolCallId: string; agentId?: string; parentSessionId: string; event: CanonicalProviderEvent; activity: string }>();
   const assertSession = (params: Record<string, unknown>) => {
     if (params.sessionId !== context.sessionId) throw new Error("Cursor extension has a stale parent session");
   };
@@ -79,6 +79,22 @@ export function createCursorProfileExtensionAdapter(context: {
       // The transport synthesizes this method only from the two pinned native
       // session/update variants, after checking the active parent connection.
       const update = object(params.update);
+      const parentSessionId = optionalText(params.parentSessionId, "parentSessionId", 1_000) ?? context.sessionId;
+      if (parentSessionId !== context.sessionId && !children.has(parentSessionId)) throw new Error("Cursor child has an unknown parent");
+      if (params.childSessionId !== undefined) {
+        const childId = requiredText(params.childSessionId, "childSessionId", 1_000);
+        const child = children.get(childId);
+        if (!child || child.parentSessionId !== parentSessionId) throw new Error("Cursor child activity has no matching spawn");
+        const summary = cursorChildActivitySummary(update);
+        const combined = [child.activity, summary.text].filter(Boolean).join("\n");
+        child.activity = boundedChildActivity(combined);
+        const event = structuredClone(child.event);
+        event.eventType = "delegation.updated";
+        const nested = object((event.payload.children as unknown[])[0]);
+        nested.activitySummary = child.activity;
+        child.event = event;
+        return [event, ...(summary.gap ? [notice(`${childId}:${String(update.sessionUpdate)}`, "cursor_child_detail_partial", summary.gap)] : [])];
+      }
       const id = requiredText(update.subagentSessionId, "subagentSessionId", 1_000);
       if (id === context.sessionId) throw new Error("Cursor child cannot impersonate its parent session");
       const metadata = object(object(update._meta).cursor);
@@ -90,10 +106,13 @@ export function createCursorProfileExtensionAdapter(context: {
       } else if (update.sessionUpdate !== "subagent_state_update" || !previous) {
         throw new Error("Cursor child update has no spawn in this active turn");
       }
-      if (previous && (previous.toolCallId !== toolCallId || previous.agentId !== agentId)) throw new Error("Cursor child update changed its origin identity");
+      if (previous && (previous.toolCallId !== toolCallId || previous.agentId !== agentId || previous.parentSessionId !== parentSessionId)) throw new Error("Cursor child update changed its origin identity");
       const event = normalizeSubagent(update);
       if (!event) throw new Error("Unsupported Cursor child update");
-      children.set(id, { toolCallId, agentId });
+      const nested = object((event.payload.children as unknown[])[0]);
+      const activity = boundedChildActivity([parentSessionId === context.sessionId ? undefined : `Parent child: ${stableId(parentSessionId)}`, previous?.activity, nested.activitySummary].filter(Boolean).join("\n"));
+      nested.activitySummary = activity || null;
+      children.set(id, { toolCallId, agentId, parentSessionId, event, activity });
       return [event];
     },
   };
@@ -316,14 +335,42 @@ export function normalizeCursorSubagentUpdate(value: unknown): CanonicalProvider
   const metadata = object(object(update._meta).cursor);
   const itemId = stableId(requiredText(metadata.toolCallId, "subagent toolCallId", 1_000));
   const state = update.sessionUpdate === "subagent_spawned" ? "running" : update.state;
-  const status = state === "cancelled" ? "interrupted" : state;
+  const status = state === "cancelled" ? "interrupted" : state === "disconnected" ? "failed" : state;
   if (!["running", "completed", "failed", "interrupted"].includes(String(status))) throw new Error("Unknown Cursor subagent state");
   return { eventType: status === "running" ? "delegation.started" : "delegation.completed", itemId, payload: {
     schema: "paperclip.delegation.v1", delegationId: itemId, action: "spawn", status,
     children: [{ childId: stableId(requiredText(update.subagentSessionId, "subagentSessionId", 1_000)),
       role: optionalText(update.name, "name", 160) ?? null, model: optionalText(metadata.model, "model", 240) ?? null,
-      status, summary: optionalText(update.task, "task", 4_000) ?? null, activitySummary: null }],
+      status, summary: update.task === "" ? null : optionalText(update.task, "task", 4_000) ?? null,
+      activitySummary: state === "disconnected" ? "Cursor child disconnected before settling." : null }],
   } };
+}
+
+function cursorChildActivitySummary(update: Record<string, unknown>): { text: string; gap?: string } {
+  const kind = requiredText(update.sessionUpdate, "child update kind", 160);
+  if (["agent_message_chunk", "agent_thought_chunk", "user_message_chunk"].includes(kind)) {
+    const content = object(update.content);
+    if (content.type === "text" && typeof content.text === "string" && content.text.length <= 65_536) {
+      return { text: `${kind === "agent_thought_chunk" ? "Reasoning" : kind === "user_message_chunk" ? "Input" : "Output"}: ${content.text}` };
+    }
+    return { text: `Child ${kind} contains non-text content.`, gap: "Cursor child media is reported as activity; nested transcript media rendering is not supported yet." };
+  }
+  if (kind === "tool_call" || kind === "tool_call_update") {
+    const toolCallId = requiredText(update.toolCallId, "child toolCallId", 1_000);
+    const title = optionalText(update.title, "child tool title", 4_000) ?? toolCallId;
+    const status = optionalText(update.status, "child tool status", 160) ?? "running";
+    return { text: `Tool ${title}: ${status}`, gap: "Cursor child tool lifecycle is attributed to the child; raw input, output, locations and diffs need a nested tool surface and are not rendered in this summary." };
+  }
+  if (kind === "plan") {
+    const entries = array(update.entries, "child plan entries", 256);
+    return { text: `Child plan: ${entries.map(value => { const entry = object(value); return `[${requiredText(entry.status, "child plan status", 160)}] ${requiredText(entry.content, "child plan step", 4_000)}`; }).join("; ")}` };
+  }
+  return { text: `Child activity: ${kind}`, gap: `Cursor child update ${kind} was retained as a kind notice; its fields need a nested transcript surface.` };
+}
+
+function boundedChildActivity(text: string): string {
+  const points = Array.from(text);
+  return points.length <= 4_000 ? text : `[Earlier child activity omitted]\n${points.slice(-3_960).join("")}`;
 }
 
 /** Preserve identity across delta state updates; use a fresh reducer per turn. */

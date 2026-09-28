@@ -1,7 +1,16 @@
 diff --git a/dist/client-CxNllqui.d.ts b/dist/client-CxNllqui.d.ts
 --- a/dist/client-CxNllqui.d.ts
 +++ b/dist/client-CxNllqui.d.ts
-@@ -135,6 +135,7 @@
+@@ -120,6 +120,8 @@
+   private initializeProtocolConnection;
+   private handleInitializeFailure;
+   private createTappedStream;
++  private cursorSubagentStreamOwner;
++  private handleCursorSubagentNotification;
+   createSession(cwd?: string): Promise<SessionCreateResult>;
+   loadSession(sessionId: string, cwd?: string): Promise<SessionLoadResult>;
+   loadSessionWithOptions(sessionId: string, cwd?: string, options?: LoadSessionOptions): Promise<SessionLoadResult>;
+@@ -135,6 +137,7 @@
    private throwPromptPermissionFailureIfPresent;
    setSessionMode(sessionId: string, modeId: string): Promise<void>;
    setSessionConfigOption(sessionId: string, configId: string, value: string): Promise<SetSessionConfigOptionResponse>;
@@ -278,10 +287,13 @@ diff --git a/dist/live-checkpoint-BSIrfgVo.js b/dist/live-checkpoint-BSIrfgVo.js
  		const onAcpMessage = () => this.eventHandlers.onAcpMessage;
  		const onAcpOutputMessage = () => this.eventHandlers.onAcpOutputMessage;
  		const elicitationRequestIds = /* @__PURE__ */ new Set();
-@@ -4367,8 +4466,9 @@
+@@ -4367,8 +4466,12 @@
  		const shouldSuppressInboundReplaySessionUpdate = (message) => {
  			return this.suppressReplaySessionUpdateMessages && isSessionUpdateNotification(message);
  		};
++		const cursorSubagentOwner = { active: null, children: new Map() };
++		this.cursorSubagentStreamOwner = cursorSubagentOwner;
++		const onCursorSubagentNotification = (message) => this.handleCursorSubagentNotification(message, cursorSubagentOwner);
 +		const onExtensionNotification = (message) => this.handleExtensionNotification(message);
  		const observeInbound = (message) => {
 -			const requestId = elicitationRequestId(message);
@@ -289,7 +301,7 @@ diff --git a/dist/live-checkpoint-BSIrfgVo.js b/dist/live-checkpoint-BSIrfgVo.js
  			if (requestId !== void 0) {
  				elicitationRequestIds.add(requestId);
  				return;
-@@ -4379,6 +4479,7 @@
+@@ -4379,6 +4482,7 @@
  			}
  		};
  		return {
@@ -297,11 +309,12 @@ diff --git a/dist/live-checkpoint-BSIrfgVo.js b/dist/live-checkpoint-BSIrfgVo.js
  			readable: new ReadableStream({ async start(controller) {
  				const reader = base.readable.getReader();
  				try {
-@@ -4387,10 +4488,16 @@
+@@ -4387,10 +4491,17 @@
  						if (done) break;
  						if (!value) continue;
  						observeInbound(value);
 -						if (isExtensionNotification(value)) continue;
++						if (onCursorSubagentNotification(value)) continue;
 +						if (isExtensionNotification(value)) {
 +							onExtensionNotification(value);
 +							continue;
@@ -315,7 +328,7 @@ diff --git a/dist/live-checkpoint-BSIrfgVo.js b/dist/live-checkpoint-BSIrfgVo.js
  					reader.releaseLock();
  					controller.close();
  				}
-@@ -4403,10 +4510,20 @@
+@@ -4403,10 +4514,20 @@
  					onAcpOutputMessage()?.("outbound", message);
  					onAcpMessage()?.("outbound", message);
  				}
@@ -336,7 +349,7 @@ diff --git a/dist/live-checkpoint-BSIrfgVo.js b/dist/live-checkpoint-BSIrfgVo.js
  					writer.releaseLock();
  				}
  			} })
-@@ -4915,9 +5032,9 @@
+@@ -4915,9 +5036,9 @@
  		await connection.authenticate({ methodId: selected.methodId });
  		this.log(`authenticated with method ${selected.methodId} (${selected.source})`);
  	}
@@ -348,7 +361,7 @@ diff --git a/dist/live-checkpoint-BSIrfgVo.js b/dist/live-checkpoint-BSIrfgVo.js
  		if (hostResponse) return hostResponse;
  		const { response, recorded } = await this.resolvePermissionRequestFromMode(params);
  		if (!recorded) {
-@@ -4926,14 +5043,49 @@
+@@ -4926,14 +5047,81 @@
  		}
  		return response;
  	}
@@ -375,6 +388,38 @@ diff --git a/dist/live-checkpoint-BSIrfgVo.js b/dist/live-checkpoint-BSIrfgVo.js
 +			signal.removeEventListener("abort", onAbort);
 +		}
 +	}
++	handleCursorSubagentNotification(message, owner) {
++		// Keep the SDK's standard union closed. Cursor child transcripts use
++		// their own session IDs and must never be flattened into the parent.
++		const method = "cursor/subagent_update";
++		if (!this.options.extensionMethods.includes(method) || this.options.clientCapabilities?._meta?.subagents !== true) return false;
++		if (message?.method !== "session/update" || "id" in message) return false;
++		const lifecycle = ["subagent_spawned", "subagent_state_update"].includes(message?.params?.update?.sessionUpdate);
++		const active = this.activePrompt;
++		const connection = this.connection;
++		if (this.cursorSubagentStreamOwner !== owner || this.closing || connection?.signal.aborted) return true;
++		if (!active || !connection || active.elicitationController.signal.aborted) return lifecycle || owner.children.has(message?.params?.sessionId);
++		if (owner.active !== active) { owner.active = active; owner.children.clear(); }
++		if (!lifecycle && message?.params?.sessionId === active.sessionId) return false;
++		try {
++			const params = boundedExtensionRecord(message.params);
++			if (lifecycle) {
++				if (params.sessionId !== active.sessionId && !owner.children.has(params.sessionId)) return true;
++				const child = params.update?.subagentSessionId;
++				if (typeof child !== "string" || !child || child.length > 1000 || child === active.sessionId) return true;
++				if (params.update.sessionUpdate === "subagent_spawned") {
++					if (owner.children.has(child) || owner.children.size >= 256) return true;
++					owner.children.set(child, params.sessionId);
++				} else if (owner.children.get(child) !== params.sessionId) return true;
++				this.options.onExtensionNotification?.(method, { sessionId: active.sessionId, parentSessionId: params.sessionId, update: params.update });
++			} else if (owner.children.has(params.sessionId)) {
++				this.options.onExtensionNotification?.(method, { sessionId: active.sessionId, parentSessionId: owner.children.get(params.sessionId), childSessionId: params.sessionId, update: params.update });
++			}
++		} catch {
++			this.log("Cursor child activity notification was rejected");
++		}
++		return true;
++	}
 +	handleExtensionNotification(message) {
 +		if (!this.options.extensionMethods.includes(message.method) || !this.options.onExtensionNotification || this.closing) return;
 +		const active = this.activePrompt;
@@ -400,7 +445,7 @@ diff --git a/dist/live-checkpoint-BSIrfgVo.js b/dist/live-checkpoint-BSIrfgVo.js
  		})).then((response) => ({
  			kind: "response",
  			response
-@@ -4970,7 +5122,7 @@
+@@ -4970,7 +5158,7 @@
  	isElicitationSessionCancelling(sessionId) {
  		return this.closing || this.cancellingSessionIds.has(sessionId);
  	}
@@ -409,7 +454,7 @@ diff --git a/dist/live-checkpoint-BSIrfgVo.js b/dist/live-checkpoint-BSIrfgVo.js
  		if (!this.options.onPermissionRequest) return;
  		const signal = this.cancellationSignalForSession(params.sessionId);
  		try {
-@@ -4978,7 +5130,7 @@
+@@ -4978,7 +5166,7 @@
  				sessionId: params.sessionId,
  				raw: params,
  				inferredKind: inferToolKind(params)
@@ -418,7 +463,7 @@ diff --git a/dist/live-checkpoint-BSIrfgVo.js b/dist/live-checkpoint-BSIrfgVo.js
  			return this.hostPermissionDecisionResponse(params, signal, decision);
  		} catch (error) {
  			return this.hostPermissionErrorResponse(params, signal, error);
-@@ -5028,6 +5180,12 @@
+@@ -5028,6 +5216,12 @@
  	attachAgentLifecycleObservers(child) {
  		child.once("exit", (exitCode, signal) => {
  			this.recordAgentExit("process_exit", exitCode, signal);
@@ -431,7 +476,7 @@ diff --git a/dist/live-checkpoint-BSIrfgVo.js b/dist/live-checkpoint-BSIrfgVo.js
  		});
  		child.once("close", (exitCode, signal) => {
  			this.recordAgentExit("process_close", exitCode, signal);
-@@ -5771,10 +5929,20 @@
+@@ -5771,10 +5965,20 @@
  	trimConversationForRuntime(conversation);
  	return acpx;
  }
@@ -454,7 +499,7 @@ diff --git a/dist/live-checkpoint-BSIrfgVo.js b/dist/live-checkpoint-BSIrfgVo.js
  	updateConversationTimestamp(conversation, timestamp);
  	trimConversationForRuntime(conversation);
  	return true;
-@@ -6435,6 +6603,27 @@
+@@ -6435,6 +6639,27 @@
  //#region src/runtime/engine/prompt-turn.ts
  const SESSION_REPLY_IDLE_MS = 1e3;
  const SESSION_REPLY_DRAIN_TIMEOUT_MS = 5e3;
@@ -482,7 +527,7 @@ diff --git a/dist/live-checkpoint-BSIrfgVo.js b/dist/live-checkpoint-BSIrfgVo.js
  async function runPromptTurn(params) {
  	try {
  		const promptPromise = params.client.prompt(params.sessionId, params.prompt, params.onPromptRequestStarted, params.onElicitation);
-@@ -6444,7 +6633,21 @@
+@@ -6444,7 +6669,21 @@
  			idleMs: SESSION_REPLY_IDLE_MS,
  			timeoutMs: SESSION_REPLY_DRAIN_TIMEOUT_MS
  		}).catch(() => {});
@@ -504,7 +549,7 @@ diff --git a/dist/live-checkpoint-BSIrfgVo.js b/dist/live-checkpoint-BSIrfgVo.js
  		return {
  			stopReason: response.stopReason,
  			source: "rpc"
-@@ -6518,4 +6721,4 @@
+@@ -6518,4 +6757,4 @@
  //#endregion
  export { writeSessionRecord as $, PERMISSION_POLICY_ACTIONS as $t, REQUESTED_MODEL_UNSUPPORTED_ERROR_CODE as A, TimeoutError as At, getAcpxVersion as B, formatErrorMessage as Bt, mergeSessionOptions as C, PromptInputValidationError as Ct, applyLifecycleSnapshotToRecord as D, promptToDisplayText as Dt, applyConversation as E, parsePromptSource as Et, modelStateFromConfigOptions as F, normalizeAgentName$1 as Ft, findSession as G, toAcpErrorPayload as Gt, DEFAULT_HISTORY_LIMIT as H, normalizeOutputError as Ht, normalizeAgentCommandInput as I, resolveAgentArgv as It, listSessions as J, NON_INTERACTIVE_PERMISSION_POLICIES as Jt, findSessionByDirectoryWalk as K, AUTH_POLICIES as Kt, renderArgvIdentity as L, resolveAgentCommand as Lt, RequestedModelUnsupportedError as M, withTimeout as Mt, assertRequestedModelSupported as N, DEFAULT_AGENT_NAME as Nt, reconcileAgentSessionId as O, textPrompt as Ot, isRequestedModelUnsupportedError as P, listBuiltInAgents as Pt, resolveSessionRecord as Q, PERMISSION_MODES as Qt, runTimedExecFile as R, resolveCanonicalAgentName as Rt, advertisedModelState as S, parsePromptStopReason as St, sessionOptionsFromRecord as T, mergePromptSourceWithText as Tt, absolutePath as U, extractAcpError as Ut, permissionModeSatisfies as V, isRetryablePromptError as Vt, findGitRepositoryRoot as W, isAcpResourceNotFoundError as Wt, normalizeName as X, OUTPUT_ERROR_ORIGINS as Xt, listSessionsForAgent as Y, OUTPUT_ERROR_CODES as Yt, pruneSessions as Z, OUTPUT_FORMATS as Zt, createSessionConversation as _, sessionEventLockPath as _t, applyRequestedModelIfAdvertised as a, measurePerf as at, recordSessionUpdate as b, isAcpJsonRpcMessage as bt, setCurrentModelId as c, setPerfGauge as ct, setDesiredModelId as d, serializeSessionRecordForDisk as dt, SESSION_RECORD_SCHEMA as en, createAtomicWriteTempPath as et, syncAdvertisedModelState as f, normalizeRuntimeSessionId as ft, cloneSessionConversation as g, sessionEventActivePath as gt, cloneSessionAcpxState as h, sessionBaseDir$1 as ht, connectAndLoadSession as i, QueueProtocolError as in, incrementPerfCounter as it, REQUESTED_MODEL_UNSUPPORTED_REASONS as j, withInterrupt as jt, AcpClient as k, InterruptedError as kt, setDesiredConfigOption as l, startPerfTimer as lt, applyConfigOptionsToState as m, defaultSessionEventLog as mt, runPromptTurn as n, AgentSpawnError as nn, formatPerfMetric as nt, currentModelIdFromSetModelResponse as o, recordPerfDuration as ot, applyConfigOptionsToRecord as p, DEFAULT_EVENT_SEGMENT_MAX_BYTES as pt, isoNow$2 as q, EXIT_CODES as qt, withConnectedSession as r, QueueConnectionError as rn, getPerfMetricsSnapshot as rt, clearDesiredConfigOption as s, resetPerfMetrics as st, LiveSessionCheckpoint as t, AcpxOperationalError as tn, assertPersistedKeyPolicy as tt, setDesiredModeId as u, parseSessionRecord as ut, recordClientOperation as v, sessionEventSegmentPath as vt, persistSessionOptions as w, isPromptInput as wt, trimConversationForRuntime as x, parseJsonRpcErrorMessage as xt, recordPromptSubmission as y, extractSessionUpdateNotification as yt, splitCommandLine as z, exitCodeForOutputErrorCode as zt };
  

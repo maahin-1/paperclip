@@ -143,4 +143,19 @@ describe("Cursor active-turn extension adapter", () => {
     await expect(adapter.notification("cursor/subagent_update", { sessionId: "parent", update: spawned })).rejects.toThrow("duplicated");
     await expect(createCursorProfileExtensionAdapter({ ...context, turnId: "next" }).notification("cursor/subagent_update", { sessionId: "parent", update: state })).rejects.toThrow("no spawn");
   });
+
+  it("attributes nested child transcripts, reports partial tool detail, and settles disconnected children honestly", async () => {
+    const adapter = createCursorProfileExtensionAdapter({ workspacePath: await workspace(), sessionId: "parent", turnId: "turn" });
+    const child = { sessionUpdate: "subagent_spawned", subagentSessionId: "child", name: "Explore", task: "", _meta: { cursor: { toolCallId: "task", agentId: "agent" } } };
+    await adapter.notification("cursor/subagent_update", { sessionId: "parent", update: child });
+    const grandchild = { ...child, subagentSessionId: "grandchild", _meta: { cursor: { toolCallId: "task-2", agentId: "agent-2" } } };
+    expect(await adapter.notification("cursor/subagent_update", { sessionId: "parent", parentSessionId: "child", update: grandchild })).toMatchObject([{ payload: { children: [{ activitySummary: expect.stringContaining("Parent child:") }] } }]);
+    const text = await adapter.notification("cursor/subagent_update", { sessionId: "parent", childSessionId: "grandchild", parentSessionId: "child", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "漢".repeat(5_000) } } });
+    expect(text[0]?.payload).toMatchObject({ children: [{ activitySummary: expect.stringContaining("Earlier child activity omitted") }] });
+    const tool = await adapter.notification("cursor/subagent_update", { sessionId: "parent", childSessionId: "child", update: { sessionUpdate: "tool_call", toolCallId: "read", title: "Read src", status: "completed", rawInput: { path: "src/index.ts" } } });
+    expect(tool).toMatchObject([{ eventType: "delegation.updated", payload: { children: [{ activitySummary: "Tool Read src: completed" }] } }, { eventType: "provider.notice.recorded", payload: { category: "cursor_child_detail_partial" } }]);
+    const disconnected = await adapter.notification("cursor/subagent_update", { sessionId: "parent", update: { ...child, sessionUpdate: "subagent_state_update", state: "disconnected" } });
+    expect(disconnected).toMatchObject([{ payload: { status: "failed", children: [{ status: "failed", activitySummary: expect.stringContaining("disconnected before settling") }] } }]);
+    await expect(adapter.notification("cursor/subagent_update", { sessionId: "parent", childSessionId: "grandchild", parentSessionId: "wrong", update: {} })).rejects.toThrow("unknown parent");
+  });
 });

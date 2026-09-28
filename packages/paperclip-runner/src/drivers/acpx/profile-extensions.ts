@@ -1,3 +1,5 @@
+import { createCopilotProfileExtensionAdapter } from "./copilot-extension-adapter.js";
+import { COPILOT_ACP_CLIENT_CAPABILITIES } from "./copilot-events.js";
 import type { HarnessRuntimeRequestResolution } from "../../contracts/harness-driver.js";
 import { parsePaperclipQuestionSet, type PaperclipQuestionSet } from "../../contracts/question-set.js";
 import { isCanonicalProviderEventType, type CanonicalProviderEvent } from "../../provider-events.js";
@@ -33,13 +35,14 @@ export interface AcpxProfileExtensionContext {
 
 /** Provider branches install their closed, pinned adapters here after qualification research. */
 export function createAcpxProfileExtensionAdapter(
-  _agent: QualifiedAcpxAgent,
-  _context: AcpxProfileExtensionContext,
+  agent: QualifiedAcpxAgent,
+  context: AcpxProfileExtensionContext,
 ): AcpxProfileExtensionAdapter | null {
+  if (agent === "copilot") return createCopilotProfileExtensionAdapter(context);
   return null;
 }
-export function acpxProfileClientCapabilities(_agent: QualifiedAcpxAgent): Record<string, unknown> {
-  return {};
+export function acpxProfileClientCapabilities(agent: QualifiedAcpxAgent): Record<string, unknown> {
+  return agent === "copilot" ? structuredClone(COPILOT_ACP_CLIENT_CAPABILITIES) : {};
 }
 
 /** Reject an oversized approval document; never silently approve a truncated revision. */

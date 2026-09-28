@@ -18,5 +18,9 @@ export function parseProviderPackArguments(args) {
 /** Closed source-owned builder registry; provider branches add their exact pins. */
 export async function materializeCandidateProviderPack({ provider, outputRoot }) {
   if (!CANDIDATES.has(provider)) throw new Error("Unknown candidate provider");
+  if (provider === "copilot") {
+    const { buildPinnedCopilotDistribution } = await import("./build-copilot-distribution.mjs");
+    return buildPinnedCopilotDistribution({ outputRoot });
+  }
   throw new Error(`The ${provider} candidate distribution builder is not included in this source revision`);
 }

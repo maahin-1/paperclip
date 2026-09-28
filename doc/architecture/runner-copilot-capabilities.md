@@ -174,7 +174,8 @@ Reasons and priorities are explicit:
 | Native external-tool/sampling/limits callbacks | No qualified ACP responder. P0 prove no unresolved request on admitted model/tools; otherwise keep release unqualified. |
 | Native capability/model/session lifecycle/config notices | Initial handshake and normalized session/config are admission authority. P1 detect capability/model drift and fail closed rather than treat a notice as authorization. |
 
-Subagent subscribed fields are preserved in full. Empty native
+Subagent subscribed fields are preserved within the declared text bounds;
+truncated display strings carry an explicit truncation marker. Empty native
 `pending_messages.modified` and `session.background_tasks_changed` events have no
 queue/task list to preserve; their projection explicitly says refresh unavailable.
 Native context repository/git-root strings, completion receipt finalTool,
@@ -196,7 +197,7 @@ python3 packages/paperclip-runner/scripts/probe-copilot-acp.py --package-root /p
 python3 packages/paperclip-runner/scripts/probe-copilot-acp.py --package-root /path/to/copilot-darwin-arm64/package --scenario attached-shell
 node --test packages/paperclip-runner/scripts/materialize-copilot-binary.test.mjs packages/paperclip-runner/scripts/build-copilot-distribution.test.mjs
 pnpm --filter @paperclipai/paperclip-runner exec vitest run src/drivers/acpx/copilot-events.test.ts src/drivers/acpx/copilot-profile.test.ts src/drivers/acpx/copilot-evidence.test.ts
-pnpm --filter @paperclipai/paperclip-runner exec vitest run src/drivers/acpx/copilot-extension-adapter.test.ts
+pnpm --filter @paperclipai/paperclip-runner exec vitest run src/drivers/acpx/copilot-extension-adapter.test.ts src/drivers/acpx/copilot-registry.test.ts
 ```
 
 Retained real-binary evidence:
@@ -239,3 +240,13 @@ builder, returning the profile digest above and closure
 The temporary output was removed after verification. This packaging proof used
 no model credentials, executed no provider turn, and incurred $0 model spend;
 it does not qualify either local product behavior or Daytona execution.
+
+The Copilot branch connects all three closed registries: profile installation
+selects the pinned native verifier, profile extensions advertise only the 22
+selected native event types and create the Copilot adapter, and candidate packs
+select the verified archive builder. Registry conformance checks the complete
+subagent field projection through the shared turn binder, attribution, canonical
+schema validation, meaningful display details, and stale/cross-session rejection.
+Admission error classification distinguishes missing authentication, account or
+organization denial, and unavailable explicit models using fixed safe messages;
+unrelated runner integrity errors keep their original classification.

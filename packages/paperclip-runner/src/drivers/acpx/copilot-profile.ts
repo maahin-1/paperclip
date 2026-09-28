@@ -65,13 +65,13 @@ export function classifyCopilotFailure(error: unknown): { code: CopilotFailureCo
     : typeof error === "string" ? error
     : isRecord(error) && typeof error.message === "string" ? error.message : "";
   const message = source.slice(0, 8192).toLowerCase();
-  if (/authentication required|unauthorized|invalid (?:github )?token|not (?:logged|signed) in/.test(message)) {
+  if (/authentication required|unauthorized|invalid (?:github )?token|not (?:logged|signed) in|copilot_github_token.*(?:missing|required|not configured)|(?:missing|no) (?:copilot |github )?(?:credential|token|authentication)/.test(message)) {
     return { code: "COPILOT_AUTH_REQUIRED", message: "Bind a valid COPILOT_GITHUB_TOKEN credential for this runner." };
   }
   if (/entitlement|subscription|organization policy|organisation policy|policy.*(?:denied|disabled)|access denied|forbidden|not entitled/.test(message)) {
     return { code: "COPILOT_ENTITLEMENT_DENIED", message: "Copilot access is denied by the account entitlement or organization policy." };
   }
-  if (/(?:model.*(?:not found|unavailable|not available|unsupported|invalid)|unknown model|invalid model)/.test(message)) {
+  if (/(?:model.*(?:not found|unavailable|not available|not supported|unsupported|invalid)|unknown model|invalid model)/.test(message)) {
     return { code: "COPILOT_MODEL_UNAVAILABLE", message: "The explicitly selected Copilot model is unavailable for this account." };
   }
   return { code: "COPILOT_REQUEST_FAILED", message: "The Copilot ACP request failed." };

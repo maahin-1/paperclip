@@ -239,26 +239,31 @@ helper discards failed-attempt usage, so any retry or missing compaction receipt
 invalidates complete-turn token/cost totals instead of inventing complete coverage.
 
 The retained [macOS ARM64 provider-pack admission proof](../../packages/paperclip-runner/test-fixtures/pi-acp/offline-provider-pack-proof.darwin-arm64.json)
-records the exact source revision, pack/runtime hashes, declared model, and
-missing-credential result. It contains no credentials or provider session IDs and
-records zero paid calls. The pack was built at
-`f58cfa1cbf4503b93a0be4480f51b492d8203b7c`, after the final foundation rebase and
-retry-status repair. Its manifest digest is
-`sha256:3de76fb7d3902d29285e3da51e36d2ba4654c29bab0c867a6209fadea77c2181`.
-The probe used the integrated installation registry and immutable snapshot. Every
-advertised capability in this record was read and asserted from that actual
-initialize response. Session creation rejected the missing bound credential;
-no model prompt was submitted. The record includes the focused checks performed
-at this source. It precedes only the evidence-retention/report commit and proves
-o authenticated interaction, model, or Daytona qualification.
+records source `d039e1b7b072862b4c326ba7194dc42617fa5984`, after the assigned
+HTTPS gateway repair and shared failed-turn receipt and credential-provenance
+fixes. Its manifest digest is
+`sha256:5a47fc67b886c1e05d0f630ed89c1b9f5324610b649d1db020a3e036e36fc85d`.
+The clean tracked-lock resolution matched Docker's reviewed
+`650e23d20e967bcfbfced888e131199b9a06e66a1ba4f64cfb68383b59def4a8` digest
+before a frozen install and pack build. The probe used the deployed generic
+installation registry and immutable snapshot. Every advertised capability was
+read and asserted from its actual initialize response. Session creation rejected
+the missing bound credential; no model prompt was submitted. The record contains
+no credentials or provider session IDs and records zero paid calls. It includes
+focused verification and the cleanup-timeout retry history, and precedes only
+this evidence-retention/report commit. It proves no authenticated interaction,
+reported model ID, or Daytona qualification.
 
+The [previous integrated proof](../../packages/paperclip-runner/test-fixtures/pi-acp/offline-provider-pack-proof.f58cfa1cb.darwin-arm64.json)
+retains source `f58cfa1cbf4503b93a0be4480f51b492d8203b7c` and manifest
+`sha256:3de76fb7d3902d29285e3da51e36d2ba4654c29bab0c867a6209fadea77c2181`.
+It covers the retry-status repair before the HTTPS and shared runtime fixes.
 The [earlier integrated proof](../../packages/paperclip-runner/test-fixtures/pi-acp/offline-provider-pack-proof.1e0d11c48.darwin-arm64.json)
 retains source `1e0d11c482f8ef50b6afc1430cb736579114b266` and manifest
-`sha256:f859e30e51326ff875d616e2bb3fd4c0246ce1f58a5988968b91bae176a68281` as
-historical evidence. It has the previous wrapper/closure identity and explicitly
-records its narrower capability assertions. It is not evidence for the current
-retry-status repair. Later runtime or foundation changes require a new pack build
-and source-pinned admission record.
+`sha256:f859e30e51326ff875d616e2bb3fd4c0246ce1f58a5988968b91bae176a68281`
+with its narrower capability assertions. Both files are historical evidence,
+not proof of the current executable bytes. Later runtime or foundation changes
+require a new pack build and source-pinned admission record.
 
 ## Remaining event and qualification work
 

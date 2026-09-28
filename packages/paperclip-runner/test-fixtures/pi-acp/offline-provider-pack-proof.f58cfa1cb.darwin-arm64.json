@@ -1,13 +1,13 @@
 {
   "schema": "paperclip.pi-provider-pack-offline-proof.v1",
-  "recordedAt": "2026-09-28T18:05:21.044Z",
+  "recordedAt": "2026-09-28T17:33:47.419Z",
   "classification": "offline_candidate_admission",
   "source": {
-    "runnerRevision": "d039e1b7b072862b4c326ba7194dc42617fa5984",
-    "distDigest": "sha256:4a06098b322bb2c92db66c99d51e9eac7009f442d53077982a88ede937fea044",
-    "bridgeDigest": "sha256:d2fb33ed3ca0f42bbc6c33486f4ff34a8e29aa2cebf94c64d1747b1ce4089eb1",
-    "productionLockDigest": "sha256:650e23d20e967bcfbfced888e131199b9a06e66a1ba4f64cfb68383b59def4a8",
-    "note": "Built after the assigned HTTPS gateway repair and the shared failed-turn receipt and credential-provenance fixes. This probe executed the deployed generic installation registry and immutable snapshot. Every capability field below was read and asserted from this actual initialize response. No prompt was sent."
+    "runnerRevision": "f58cfa1cbf4503b93a0be4480f51b492d8203b7c",
+    "distDigest": "sha256:c7f250e0fbe0b6a6357bacb2d1487675d74a32f96b42922d7739ef86ddb9b6e0",
+    "bridgeDigest": "sha256:431b2400f13a20249b2d4383188e496f071f7d009a1835873561711f567f55b3",
+    "productionLockDigest": "sha256:b89a0f0a647b77f61b231bcdd95e1fc26eaf9e9b8010d53a16428fae49b96f26",
+    "note": "Built after the final foundation rebase and Pi retry-outcome repair. This probe executed the deployed generic installation registry and immutable snapshot. Every capability field below was read and asserted from this actual initialize response. No prompt was sent."
   },
   "environment": {
     "platform": "darwin",
@@ -25,19 +25,19 @@
     "modelVerification": "not_performed_authentication_missing",
     "wrapperVersion": "0.0.33",
     "runtimeVersion": "0.84.2",
-    "profileDigest": "sha256:c577a771778febe24b920388da77f6143971b8eec29e1ba9a433dac5b76de3cd",
-    "closureDigest": "sha256:a26e98fe3f4d3d93c13beffdb4e8b778d438dd1b3bca8a9b1610154342382681",
-    "assetTreeDigest": "sha256:44b058bf5a10b82d355351e8034d82e0a82d8de3236c80ccd586922953a4de4a",
-    "distributionManifestDigest": "sha256:bd46c419b3a9c56332eda72dfc5fbd7621d8f0a271be8fb6202b005a39ee4c7a",
+    "profileDigest": "sha256:5ed73f923b24bf203cf39d6c5dedd5dfd21e94efcb2c2580b4adf53f1b91fd2f",
+    "closureDigest": "sha256:c79fa33fd134e860fd777cd467873438b17b80b0b462a89e95cc63fbaa46bada",
+    "assetTreeDigest": "sha256:ceb81538aff1d04bff44505aa1e08ace869039c8055ed82667fab64e21f05ab1",
+    "distributionManifestDigest": "sha256:cc56a2bd75d56de01982a731e7d43b0b5e96fd3f7e06cdbbd1bc858bf2ffcd05",
     "wrapperDigest": "sha256:2eb201c3a931177490a8e18f4a8392f00cbcf21847e9cc171de528da5e253935",
     "helperDigest": "sha256:4333d284ff06ab1195e49630041f0b03a486a92fc678100525ad107e0982dba1",
-    "extensionDigest": "sha256:0a2ca138d6d87a85498bd982ee64543ea8b14f2ecceded96cfc27b0836cc4254"
+    "extensionDigest": "sha256:87f5348be5da3fb505baea1208de7b62e88ec714adcf0ac0a16a51952f57e2da"
   },
   "providerPack": {
-    "manifestDigest": "sha256:5a47fc67b886c1e05d0f630ed89c1b9f5324610b649d1db020a3e036e36fc85d",
+    "manifestDigest": "sha256:3de76fb7d3902d29285e3da51e36d2ba4654c29bab0c867a6209fadea77c2181",
     "portableNodeDigest": "sha256:27db838bb204ef7c21df2931f5656e4c8fb32e6e947f363a402b49714d32b5b1",
     "piNodeDigest": "sha256:27db838bb204ef7c21df2931f5656e4c8fb32e6e947f363a402b49714d32b5b1",
-    "acpxSidecarDigest": "sha256:9416ff4c0d87ae343b6af4354b7b871ece77d86799f0daaf866915647ae44eb5"
+    "acpxSidecarDigest": "sha256:ee85322a4947f21fe079cc22ed1c7282a38fb84016ae28b56cde4f58b9001d5e"
   },
   "observed": {
     "closedSnapshotLaunch": true,
@@ -81,46 +81,15 @@
     "Production qualification remains pending."
   ],
   "verification": {
-    "sourceRevision": "d039e1b7b072862b4c326ba7194dc42617fa5984",
-    "resolvedSourceLockDigest": "sha256:650e23d20e967bcfbfced888e131199b9a06e66a1ba4f64cfb68383b59def4a8",
-    "lockResolution": "clean tracked input, full workspace resolution, matched reviewed Docker pin before frozen filtered install",
+    "sourceRevision": "f58cfa1cbf4503b93a0be4480f51b492d8203b7c",
     "typescriptBuild": "passed",
     "providerPackBuild": "passed",
     "vitest": {
       "files": 4,
-      "passed": 31,
+      "passed": 30,
       "failed": 0,
-      "maxWorkers": 1,
-      "hookTimeoutMs": 10000,
-      "actualDistributionInstallation": "enabled; current provider-pack assets",
-      "durationSeconds": 12.22
+      "actualDistributionInstallation": "enabled; same pinned runtime closure"
     },
-    "verificationHistory": [
-      {
-        "suite": "four Pi Vitest files",
-        "passed": 30,
-        "failed": 1,
-        "failurePhase": "afterEach cleanup",
-        "failure": "Hook timed out in 10000ms while deleting the large immutable snapshot during concurrent pack builds; launch assertions completed",
-        "durationSeconds": 41.63
-      },
-      {
-        "suite": "four Pi Vitest files",
-        "passed": 31,
-        "failed": 0,
-        "hookTimeoutMs": 60000,
-        "durationSeconds": 42.07
-      },
-      {
-        "suite": "four Pi Vitest files",
-        "passed": 31,
-        "failed": 0,
-        "hookTimeoutMs": 10000,
-        "maxWorkers": 1,
-        "durationSeconds": 12.22,
-        "note": "Repeated after pack/probe IO settled, with unchanged source and default cleanup timeout."
-      }
-    ],
     "nodeTests": {
       "files": 3,
       "passed": 17,

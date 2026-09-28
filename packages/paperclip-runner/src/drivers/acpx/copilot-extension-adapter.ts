@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { CanonicalProviderEvent } from "../../provider-events.js";
-import { redactPaperclipSemanticValue } from "../../semantic-tools/redaction.js";
+import { redactPaperclipSemanticValue, redactSemanticValue } from "../../semantic-tools/redaction.js";
 import { COPILOT_ACP_EVENT_METHOD, normalizeCopilotSessionEvent, type CopilotSessionEvent } from "./copilot-events.js";
 import type { AcpxProfileExtensionAdapter, AcpxProfileExtensionContext } from "./profile-extensions.js";
 
@@ -116,8 +116,11 @@ function detailFields(data: Record<string, unknown>): Array<{ name: string; valu
     if (value !== null && typeof value === "object" && !Array.isArray(value)) {
       for (const [key, entry] of Object.entries(value)) visit(entry, name ? `${name}.${key}` : key);
     } else if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-      // Redact values individually: numeric token counters are not credentials.
-      details.push({ name: bounded(name, 160), value: bounded(String(value), 4000) });
+      // Preserve the complete field path for sensitive-key redaction. The
+      // normalizer admits only known, typed counters/flags: their numeric token
+      // counts are not credentials, so they retain value-only redaction.
+      const safe = typeof value === "string" ? redactSemanticValue(value, name) : value;
+      details.push({ name: bounded(name, 160), value: bounded(String(safe), 4000) });
     }
   };
   visit(data, "");

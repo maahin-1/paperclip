@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as copilotEvents from "./copilot-events.js";
 import { COPILOT_ACP_EVENT_METHOD } from "./copilot-events.js";
 import { createCopilotProfileExtensionAdapter } from "./copilot-extension-adapter.js";
 import { validateAcpxRichEvent } from "./profile-extensions.js";
@@ -61,6 +62,26 @@ describe("Copilot display extension adapter", () => {
     expect(JSON.stringify(events)).not.toContain("Do not fabricate");
     expect(await adapter.notification("unrelated/event", {})).toEqual([]);
     expect(await adapter.notification(COPILOT_ACP_EVENT_METHOD, { ...params("session.idle", {}), sessionId: "another" })).toEqual([]);
+  });
+
+  it("redacts sensitive field paths even when their plain values have no recognizable credential prefix", async () => {
+    // Exercise the display boundary independently from today's closed native
+    // field list, so a future projected field cannot bypass keyed redaction.
+    const normalize = vi.spyOn(copilotEvents, "normalizeCopilotSessionEvent").mockReturnValueOnce({
+      kind: "usage", sourceMethod: COPILOT_ACP_EVENT_METHOD, sourceType: "assistant.usage",
+      sessionId: context.sessionId, turnId: context.turnId,
+      data: { connectionString: "plain-credential-value", credentials: { endpoint: "opaque-value" }, inputTokens: 42 },
+    });
+    try {
+      const events = await createCopilotProfileExtensionAdapter(context).notification(COPILOT_ACP_EVENT_METHOD, params("assistant.usage", {}));
+      events.forEach(validateAcpxRichEvent);
+      expect(events[0].payload.details).toEqual(expect.arrayContaining([
+        { name: "connectionString", value: "[REDACTED]" },
+        { name: "credentials.endpoint", value: "[REDACTED]" },
+        { name: "inputTokens", value: "42" },
+      ]));
+      expect(JSON.stringify(events)).not.toMatch(/plain-credential-value|opaque-value/);
+    } finally { normalize.mockRestore(); }
   });
 
   it("emits compaction completion only after provider-reported success and keeps settlement notices nonterminal", async () => {

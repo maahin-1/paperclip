@@ -1,13 +1,13 @@
 {
   "schema": "paperclip.pi-provider-pack-offline-proof.v1",
-  "recordedAt": "2026-09-28T16:58:36.497Z",
+  "recordedAt": "2026-09-28T17:16:19.824Z",
   "classification": "offline_candidate_admission",
   "source": {
-    "runnerRevision": "e3658cd0a6d26af63d59201a47039af7e6f33510",
-    "distDigest": "sha256:7c6f7254edcdaf16e727d55f16cf59b596042a7e5d64f34ac819771e46e3f3bb",
-    "bridgeDigest": "sha256:d38c8843c3b5d6857944864aae1e348f98e91a454831a7e3f4d5dfd62de43e23",
-    "productionLockDigest": "sha256:38bc9b884fe535e668d896bd9c8f7ec5449a75d52bd4c4ae452ee0dc623ddefc",
-    "note": "Pack built at the recorded runner revision before the subsequent 20d641be3 Daytona input-contract commit and this evidence-retention commit. It is not evidence that later source changes were executed."
+    "runnerRevision": "1e0d11c482f8ef50b6afc1430cb736579114b266",
+    "distDigest": "sha256:70dcefa5e8a12d43c6b7fe2bda54b8dbd8e5706b17cb97a94f36a70a7974398c",
+    "bridgeDigest": "sha256:6f2f1e35c497cc480fa061ed8579c709f7f4732cd5cb8f7e27fef7fb992f3559",
+    "productionLockDigest": "sha256:67f4ff4c747a7bcad77cbdd7ed264d387a30e950def41a44dbd8664caa6a172b",
+    "note": "Integrated pack probe used the deployed generic installation registry and its immutable snapshot. Initialize steering and missing-credential assertions passed. Evidence serialization initially used an incorrect manifest member; this record was repaired from the actual artifacts entries after the provider was closed. No prompt was sent."
   },
   "environment": {
     "platform": "darwin",
@@ -34,10 +34,10 @@
     "extensionDigest": "sha256:87f5348be5da3fb505baea1208de7b62e88ec714adcf0ac0a16a51952f57e2da"
   },
   "providerPack": {
-    "manifestDigest": "sha256:fc9a547253311508a20c197377fea5cfdaaaa7b6a772fd0de30b49bce9771e75",
+    "manifestDigest": "sha256:f859e30e51326ff875d616e2bb3fd4c0246ce1f58a5988968b91bae176a68281",
     "portableNodeDigest": "sha256:27db838bb204ef7c21df2931f5656e4c8fb32e6e947f363a402b49714d32b5b1",
     "piNodeDigest": "sha256:27db838bb204ef7c21df2931f5656e4c8fb32e6e947f363a402b49714d32b5b1",
-    "acpxSidecarDigest": "sha256:6606044fe3fc400f3b7721f95e925a8508266a2fcd44c72dae29148644acb36e"
+    "acpxSidecarDigest": "sha256:6a1f7cef751ac59c54bb9dbd3fa7bc03eee27a7ba2b551aa75cd520314f05391"
   },
   "observed": {
     "closedSnapshotLaunch": true,
@@ -60,7 +60,8 @@
     },
     "sessionNew": "rejected_authentication_missing",
     "expectedError": "Bind the configured OpenRouter API credential to this Paperclip runtime.",
-    "missingCredentialRejected": true
+    "missingCredentialRejected": true,
+    "capabilityProvenance": "Unchanged pinned Pi closure from the previous complete capability receipt; integrated probe reasserted steering and missing-credential rejection."
   },
   "usage": {
     "providerCalls": 0,

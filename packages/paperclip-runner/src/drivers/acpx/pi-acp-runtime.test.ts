@@ -91,6 +91,16 @@ describe("Pi ACP bridge", () => {
     } });
   });
 
+  it("accounts compaction receipts once and does not fabricate partial coverage", () => {
+    const usage = new PiTurnUsage();
+    usage.accept({ role: "assistant", timestamp: 1, stopReason: "error", usage: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, cost: { total: 0.01 } } });
+    const compacted = { firstKeptEntryId: "entry-2", tokensBefore: 100, summary: "Context summary", usage: { input: 10, output: 4, cacheRead: 2, cacheWrite: 0, cost: { total: 0.02 } } };
+    usage.acceptCompaction(compacted); usage.acceptCompaction(compacted);
+    expect(usage.response()).toMatchObject({ usage: { inputTokens: 11, outputTokens: 6, totalTokens: 19, _meta: { paperclipPi: { provenance: "assistant_message_and_compaction_receipts", costUsd: 0.03 } } }, _meta: { jetbrains: { air: { sessionFailure: { severity: "error" } } } } });
+    usage.acceptCompaction({ summary: "Missing usage" });
+    expect(usage.response().usage).toEqual({ _meta: { paperclipPi: { provenance: "assistant_message_and_compaction_receipts" } } });
+  });
+
   it("launches verified paths only and rejects session escapes", async () => {
     const root = await mkdtemp(join(tmpdir(), "paperclip-pi-launch-")); temporary.push(root);
     await mkdir(join(root, "sessions"));

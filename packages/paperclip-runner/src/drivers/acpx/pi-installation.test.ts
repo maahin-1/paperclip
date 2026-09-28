@@ -1,5 +1,6 @@
-import { cp, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { once } from "node:events";
+import { createHash } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,6 +23,13 @@ async function fixture() {
 }
 
 describe("Pi installation factory", () => {
+  it("binds the profile declaration to the reviewed patch and platform closure pins", async () => {
+    const digest = createHash("sha256").update("paperclip.pi.rich-acp.profile.v2\0")
+      .update(await readFile(new URL("../../../../../patches/pi-acp@0.0.33.patch", import.meta.url)))
+      .update("\0").update(await readFile(new URL("./pi-closure-pins.ts", import.meta.url))).digest("hex");
+    expect(QUALIFIED_ACPX_PROFILES.pi.commandDigest).toBe(`sha256:${digest}`);
+  });
+
   it("rejects legacy profiles and caller-selected identities", () => {
     expect(() => assertPiInstallationProfile(candidate())).not.toThrow();
     expect(() => assertPiInstallationProfile({ ...candidate(), agentProfileVersion: 1 })).toThrow("version 2");

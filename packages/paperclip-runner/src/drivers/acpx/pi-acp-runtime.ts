@@ -210,7 +210,7 @@ export class PiUiBridge {
   }
 }
 
-/** Sum actual assistant receipts, never context occupancy or estimated cost. */
+/** Sum native usage receipts; preserve missing fields and label catalog pricing. */
 export class PiTurnUsage {
   private seen = new Set<string>();
   private total = { inputTokens: 0, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0, totalTokens: 0 };
@@ -218,9 +218,10 @@ export class PiTurnUsage {
   private unknown = new Set<keyof typeof this.total>();
   private costObserved = false;
   private costIncomplete = false;
+  private compactionObserved = false;
   private failed = false;
   private observed = false;
-  reset(): void { this.seen.clear(); this.total = { inputTokens: 0, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0, totalTokens: 0 }; this.cost = 0; this.unknown.clear(); this.costObserved = false; this.costIncomplete = false; this.failed = false; this.observed = false; }
+  reset(): void { this.seen.clear(); this.total = { inputTokens: 0, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0, totalTokens: 0 }; this.cost = 0; this.unknown.clear(); this.costObserved = false; this.costIncomplete = false; this.compactionObserved = false; this.failed = false; this.observed = false; }
   accept(value: unknown): void {
     const message = record(value);
     if (message.role !== "assistant") return;
@@ -252,9 +253,30 @@ export class PiTurnUsage {
     } else this.costIncomplete = true;
   }
 
+  markIncomplete(): void {
+    for (const name of Object.keys(this.total)) this.unknown.add(name as keyof typeof this.total);
+    this.costIncomplete = true;
+  }
+
+  acceptCompaction(value: unknown): void {
+    this.compactionObserved = true;
+    const result = value && typeof value === "object" && !Array.isArray(value) ? record(value) : {};
+    if (!result.usage || typeof result.usage !== "object") {
+      // A compaction may consume tokens even if its terminal receipt is absent.
+      // Known assistant counters alone cannot establish the complete turn.
+      this.markIncomplete();
+      return;
+    }
+    const previousFailure = this.failed;
+    this.accept({ role: "assistant", id: "compaction", timestamp: result.firstKeptEntryId,
+      content: [result.tokensBefore, result.summary], usage: result.usage });
+    // A successful summary is not proof that an earlier failed model turn recovered.
+    this.failed = previousFailure;
+  }
+
   response(): RecordValue {
     return {
-      ...(this.observed ? { usage: { ...Object.fromEntries(Object.entries(this.total).filter(([name]) => !this.unknown.has(name as keyof typeof this.total))), _meta: { paperclipPi: { provenance: "assistant_message_receipts", ...(this.costObserved && !this.costIncomplete ? { costUsd: this.cost, costSource: "pi_pricing_estimate" } : {}) } } } } : {}),
+      ...(this.observed ? { usage: { ...Object.fromEntries(Object.entries(this.total).filter(([name]) => !this.unknown.has(name as keyof typeof this.total))), _meta: { paperclipPi: { provenance: this.compactionObserved ? "assistant_message_and_compaction_receipts" : "assistant_message_receipts", ...(this.costObserved && !this.costIncomplete ? { costUsd: this.cost, costSource: "pi_pricing_estimate" } : {}) } } } } : {}),
       ...(this.failed ? { _meta: { jetbrains: { air: { version: 1, sessionFailure: { severity: "error", category: "service", title: "Pi provider request failed" } } } } } : {}),
     };
   }

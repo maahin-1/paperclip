@@ -1,4 +1,3 @@
-diff --git a/dist/index.js b/dist/index.js
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -11,6 +11,7 @@
@@ -127,7 +126,23 @@ diff --git a/dist/index.js b/dist/index.js
      }
    }
    /**
-@@ -288,12 +287,17 @@
+@@ -242,7 +241,7 @@
+     if (!res.success) throw new Error(`pi set_steering_mode failed: ${res.error ?? JSON.stringify(res.data)}`);
+   }
+   async compact(customInstructions) {
+-    const res = await this.request({ type: "compact", customInstructions });
++    const res = await this.request({ type: "compact", customInstructions }, 120000);
+     if (!res.success) throw new Error(`pi compact failed: ${res.error ?? JSON.stringify(res.data)}`);
+     return res.data;
+   }
+@@ -283,17 +282,23 @@
+     await this.writeLine(`${JSON.stringify({ type: "extension_ui_response", ...response })}
+ `);
+   }
+-  request(cmd) {
++  request(cmd, timeoutMs = 30000) {
++    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120000) throw new Error("Invalid Pi RPC deadline");
+     const id = crypto.randomUUID();
      const withId = { ...cmd, id };
      const line = `${JSON.stringify(withId)}
  `;
@@ -138,7 +153,7 @@ diff --git a/dist/index.js b/dist/index.js
 -        this.pending.delete(id);
 -        reject(error);
 -      });
-+      const timer = setTimeout(() => finish(new Error("Pi RPC request timed out")), 30000);
++      const timer = setTimeout(() => { finish(new Error("Pi RPC request timed out")); this.dispose("SIGKILL"); }, timeoutMs);
 +      timer.unref();
 +      const finish = (error, value) => {
 +        if (!this.pending.delete(id)) return;
@@ -150,7 +165,7 @@ diff --git a/dist/index.js b/dist/index.js
      });
    }
    writeLine(line) {
-@@ -337,7 +341,7 @@
+@@ -337,7 +342,7 @@
      {
        authMethods: getAuthMethods()
      },
@@ -159,7 +174,7 @@ diff --git a/dist/index.js b/dist/index.js
    );
  }
 
-@@ -714,6 +718,7 @@
+@@ -714,6 +719,7 @@
      try {
        proc = await PiRpcProcess.spawn({
          cwd: params.cwd,
@@ -167,7 +182,7 @@ diff --git a/dist/index.js b/dist/index.js
          piCommand: params.piCommand
        });
      } catch (e) {
-@@ -808,6 +813,9 @@
+@@ -808,6 +814,9 @@
      this.proc = opts.proc;
      this.conn = opts.conn;
      this.fileCommands = opts.fileCommands ?? [];
@@ -177,7 +192,7 @@ diff --git a/dist/index.js b/dist/index.js
      this.proc.onEvent((ev) => this.handlePiEvent(ev));
    }
    setStartupInfo(text) {
-@@ -852,6 +860,7 @@
+@@ -852,6 +861,7 @@
    }
    async cancel() {
      this.cancelRequested = true;
@@ -185,7 +200,7 @@ diff --git a/dist/index.js b/dist/index.js
      if (this.turnQueue.length) {
        const queued = this.turnQueue.splice(0, this.turnQueue.length);
        for (const t of queued) t.resolve("cancelled");
-@@ -920,12 +929,16 @@
+@@ -920,12 +930,16 @@
      this.cancelRequested = false;
      this.inAgentLoop = false;
      this.pendingTurn = { resolve: t.resolve, reject: t.reject };
@@ -202,7 +217,7 @@ diff --git a/dist/index.js b/dist/index.js
          const authErr = maybeAuthRequiredError(err);
          if (authErr) {
            this.pendingTurn?.reject(authErr);
-@@ -946,6 +959,23 @@
+@@ -946,6 +960,23 @@
    handlePiEvent(ev) {
      const type = String(ev.type ?? "");
      switch (type) {
@@ -226,7 +241,7 @@ diff --git a/dist/index.js b/dist/index.js
        case "message_update": {
          const ame = ev.assistantMessageEvent;
          if (ame?.type === "text_delta" && typeof ame.delta === "string") {
-@@ -1047,7 +1077,7 @@
+@@ -1047,7 +1078,7 @@
            if (p) {
              try {
                const abs = isAbsolute(p) ? p : resolvePath(this.cwd, p);
@@ -235,7 +250,7 @@ diff --git a/dist/index.js b/dist/index.js
                this.fileSnapshots.set(toolCallId, { path: p, oldText: snapshotOldText });
                if (toolName === "edit") {
                  for (const needle of getEditOldTexts(args)) {
-@@ -1125,7 +1155,7 @@
+@@ -1125,7 +1156,7 @@
          if (!isError && snapshot) {
            try {
              const abs = isAbsolute(snapshot.path) ? snapshot.path : resolvePath(this.cwd, snapshot.path);
@@ -244,7 +259,7 @@ diff --git a/dist/index.js b/dist/index.js
              if (snapshot.oldText === null || newText !== snapshot.oldText) {
                hasStructuredDiff = true;
                content = [
-@@ -1154,14 +1184,11 @@
+@@ -1154,14 +1185,11 @@
          break;
        }
        case "extension_ui_request": {
@@ -263,7 +278,46 @@ diff --git a/dist/index.js b/dist/index.js
          break;
        }
        case "auto_retry_start": {
-@@ -1210,9 +1237,12 @@
+@@ -1178,24 +1206,22 @@
+         });
+         break;
+       }
+-      case "auto_compaction_start": {
+-        this.emit({
+-          sessionUpdate: "agent_message_chunk",
+-          content: {
+-            type: "text",
+-            text: "Context nearing limit, running automatic compaction..."
+-          }
+-        });
++      case "compaction_start": {
++        this.emit({ sessionUpdate: "agent_message_chunk", content: {
++          type: "text", text: ev.reason === "manual" ? "Compacting context..." : "Context nearing limit, running automatic compaction..."
++        } });
+         break;
+       }
+-      case "auto_compaction_end": {
+-        this.emit({
+-          sessionUpdate: "agent_message_chunk",
+-          content: {
+-            type: "text",
+-            text: "Automatic compaction finished; context was summarized to continue the session."
+-          }
+-        });
++      case "compaction_end": {
++        (this.pendingTurn ? this.turnUsage : this.manualCompactionUsage)?.acceptCompaction(ev.result);
++        this.emit({ sessionUpdate: "agent_message_chunk", content: {
++          type: "text", text: ev.aborted ? "Context compaction cancelled." : ev.errorMessage ? "Context compaction failed." : "Context compaction finished."
++        } });
++        break;
++      }
++      case "summarization_retry_scheduled": {
++        (this.pendingTurn ? this.turnUsage : this.manualCompactionUsage)?.markIncomplete();
++        this.emit({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Context summarization is retrying a provider request." } });
+         break;
+       }
+       case "agent_start": {
+@@ -1210,9 +1236,12 @@
          break;
        }
        case "agent_settled": {
@@ -277,7 +331,7 @@ diff --git a/dist/index.js b/dist/index.js
            this.pendingTurn = null;
            this.inAgentLoop = false;
            const next = this.turnQueue.shift();
-@@ -1725,6 +1755,7 @@
+@@ -1725,6 +1754,7 @@
    return process.env.PI_CODING_AGENT_DIR ? resolve3(process.env.PI_CODING_AGENT_DIR) : join4(homedir4(), ".pi", "agent");
  }
  function getEnableSkillCommands(cwd) {
@@ -285,7 +339,7 @@ diff --git a/dist/index.js b/dist/index.js
    const merged = getMergedSettings(cwd);
    const direct = merged.enableSkillCommands;
    if (typeof direct === "boolean") return direct;
-@@ -1733,6 +1764,7 @@
+@@ -1733,6 +1763,7 @@
    return true;
  }
  function getQuietStartup(cwd) {
@@ -293,7 +347,7 @@ diff --git a/dist/index.js b/dist/index.js
    const merged = getMergedSettings(cwd);
    const direct = merged.quietStartup;
    if (typeof direct === "boolean") return direct;
-@@ -1824,6 +1856,7 @@
+@@ -1824,6 +1855,7 @@
    const out = [];
    const seen = /* @__PURE__ */ new Set();
    for (const c of [...a, ...b]) {
@@ -301,7 +355,7 @@ diff --git a/dist/index.js b/dist/index.js
      if (seen.has(c.name)) continue;
      seen.add(c.name);
      out.push(c);
-@@ -1884,11 +1917,13 @@
+@@ -1884,11 +1916,13 @@
          throw RequestError3.invalidParams(`Unknown sessionId: ${sessionId}`);
        }
        const cwd = opts?.cwd ?? stored.cwd;
@@ -315,7 +369,7 @@ diff --git a/dist/index.js b/dist/index.js
            piCommand: process.env.PI_ACP_PI_COMMAND
          });
        } catch (e) {
-@@ -1897,7 +1932,7 @@
+@@ -1897,7 +1931,7 @@
          }
          throw e;
        }
@@ -324,7 +378,7 @@ diff --git a/dist/index.js b/dist/index.js
        const session = this.sessions.getOrCreate(sessionId, {
          cwd,
          mcpServers: opts?.mcpServers ?? [],
-@@ -1917,6 +1952,7 @@
+@@ -1917,6 +1951,7 @@
      }
    }
    async initialize(params) {
@@ -332,7 +386,7 @@ diff --git a/dist/index.js b/dist/index.js
      const supportedVersion = 1;
      const requested = params.protocolVersion;
      return {
-@@ -1933,7 +1969,8 @@
+@@ -1933,7 +1968,8 @@
        }),
        agentCapabilities: {
          loadSession: true,
@@ -342,7 +396,7 @@ diff --git a/dist/index.js b/dist/index.js
          promptCapabilities: {
            image: true,
            audio: false,
-@@ -1942,8 +1979,7 @@
+@@ -1942,8 +1978,7 @@
          sessionCapabilities: {
            // **UNSTABLE** ACP capability used by Zed's codex-acp adapter.
            // Enables a native session picker in clients that support it.
@@ -352,7 +406,7 @@ diff --git a/dist/index.js b/dist/index.js
          }
        }
      };
-@@ -1953,7 +1989,7 @@
+@@ -1953,7 +1988,7 @@
        throw RequestError3.invalidParams(`cwd must be an absolute path: ${params.cwd}`);
      }
      this.lastSessionCwd = params.cwd;
@@ -361,7 +415,7 @@ diff --git a/dist/index.js b/dist/index.js
      const enableSkillCommands = getEnableSkillCommands(params.cwd);
      const session = await this.sessions.create({
        cwd: params.cwd,
-@@ -1994,14 +2030,14 @@
+@@ -1994,14 +2029,14 @@
        this.cleanupFailedNewSession(session.sessionId, state);
        throw RequestError3.authRequired(
          { authMethods: getAuthMethods() },
@@ -378,8 +432,11 @@ diff --git a/dist/index.js b/dist/index.js
        );
      }
      const { configOptions, models, modes } = await getSessionConfiguration(session.proc, {
-@@ -2066,6 +2102,8 @@
+@@ -2064,34 +2099,27 @@
+   }
+   async prompt(params) {
      const session = await this.restoreSession(params.sessionId);
++    if (session.manualCompactionUsage) throw RequestError3.invalidParams("Pi context compaction is active");
      const { message, images } = promptToPiMessage(params.prompt);
      if (images.length === 0 && message.trimStart().startsWith("/")) {
 +      const command = message.trim().split(/\s+/)[0];
@@ -387,7 +444,42 @@ diff --git a/dist/index.js b/dist/index.js
        const trimmed = message.trim();
        const space = trimmed.indexOf(" ");
        const cmd = space === -1 ? trimmed.slice(1) : trimmed.slice(1, space);
-@@ -2432,8 +2470,18 @@
+       const argsString = space === -1 ? "" : trimmed.slice(space + 1);
+       const args = parseCommandArgs(argsString);
+       if (cmd === "compact") {
++        if (session.pendingTurn || session.manualCompactionUsage) throw RequestError3.invalidParams("Manual compaction requires an idle session");
+         const customInstructions = args.join(" ").trim() || void 0;
+-        const res = await session.proc.compact(customInstructions);
+-        const r = res && typeof res === "object" ? res : null;
+-        const tokensBefore = typeof r?.tokensBefore === "number" ? r.tokensBefore : null;
+-        const summary = typeof r?.summary === "string" ? r.summary : null;
+-        const headerLines = [
+-          `Compaction completed.${customInstructions ? " (custom instructions applied)" : ""}`,
+-          tokensBefore !== null ? `Tokens before: ${tokensBefore}` : null
+-        ].filter(Boolean);
+-        const text = headerLines.join("\n") + (summary ? `
+-
+-${summary}` : "");
+-        await this.conn.sessionUpdate({
+-          sessionId: session.sessionId,
+-          update: {
+-            sessionUpdate: "agent_message_chunk",
+-            content: { type: "text", text }
+-          }
+-        });
+-        return { stopReason: "end_turn" };
++        const compactionUsage = new PiTurnUsage();
++        session.manualCompactionUsage = compactionUsage;
++        try {
++          const res = await session.proc.compact(customInstructions);
++          compactionUsage.acceptCompaction(res);
++          await session.flushEmits();
++          return { stopReason: "end_turn", ...compactionUsage.response() };
++        } finally { session.manualCompactionUsage = null; }
+       }
+       if (cmd === "session") {
+         const stats = await session.proc.getSessionStats();
+@@ -2432,8 +2460,18 @@
        }
      }
      const result = await session.prompt(message, images);
@@ -408,7 +500,7 @@ diff --git a/dist/index.js b/dist/index.js
    }
    async cancel(params) {
      const session = this.sessions.maybeGet(params.sessionId);
-@@ -2473,7 +2521,7 @@
+@@ -2473,7 +2511,7 @@
        mcpServers: params.mcpServers
      });
      const proc = session.proc;
@@ -417,7 +509,7 @@ diff --git a/dist/index.js b/dist/index.js
      this.sessions.closeAllExcept?.(session.sessionId);
      this.store.upsert({
        sessionId: params.sessionId,
-@@ -2607,6 +2655,7 @@
+@@ -2607,6 +2645,7 @@
      return response;
    }
    async deleteSession(params) {
@@ -425,7 +517,7 @@ diff --git a/dist/index.js b/dist/index.js
      const stored = this.store.get(params.sessionId);
      const piSession = findPiSession(params.sessionId);
      if (!stored && !piSession) {
-@@ -2828,6 +2877,7 @@
+@@ -2828,6 +2867,7 @@
    return 0;
  }
  function buildUpdateNotice() {
@@ -433,7 +525,7 @@ diff --git a/dist/index.js b/dist/index.js
    try {
      const piVersion = spawnSync("pi", ["--version"], { encoding: "utf-8" });
      const installed = (String(piVersion.stdout ?? "").trim() || String(piVersion.stderr ?? "").trim()).replace(
-@@ -2848,6 +2898,7 @@
+@@ -2848,6 +2888,7 @@
    }
  }
  function buildStartupInfo(opts) {
@@ -441,7 +533,7 @@ diff --git a/dist/index.js b/dist/index.js
    void opts.fileCommands;
    const md = [];
    try {
-@@ -2980,6 +3031,7 @@
+@@ -2980,6 +3021,7 @@
 
  // src/index.ts
  if (process.argv.includes("--terminal-login")) {
@@ -449,7 +541,7 @@ diff --git a/dist/index.js b/dist/index.js
    const { spawnSync: spawnSync2 } = await import("child_process");
    const cmd = getPiCommand(process.env.PI_ACP_PI_COMMAND);
    const res = spawnSync2(cmd, [], {
-@@ -3019,11 +3071,12 @@
+@@ -3019,11 +3061,12 @@
    }
  });
  var stream = ndJsonStream(input, output);
@@ -464,11 +556,9 @@ diff --git a/dist/index.js b/dist/index.js
    } catch {
    }
    try {
-diff --git a/dist/paperclip-runtime.js b/dist/paperclip-runtime.js
-new file mode 100644
---- /dev/null
+--- a/dist/paperclip-runtime.js
 +++ b/dist/paperclip-runtime.js
-@@ -0,0 +1,261 @@
+@@ -0,0 +1,283 @@
 +/** Source for the helper embedded in patches/pi-acp@0.0.33.patch. */
 +import { StringDecoder } from "node:string_decoder";
 +import { isAbsolute, relative, resolve, sep } from "node:path";
@@ -681,7 +771,7 @@ new file mode 100644
 +  }
 +}
 +
-+/** Sum actual assistant receipts, never context occupancy or estimated cost. */
++/** Sum native usage receipts; preserve missing fields and label catalog pricing. */
 +export class PiTurnUsage {
 +          seen = new Set        ();
 +          total = { inputTokens: 0, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0, totalTokens: 0 };
@@ -689,9 +779,10 @@ new file mode 100644
 +          unknown = new Set                         ();
 +          costObserved = false;
 +          costIncomplete = false;
++          compactionObserved = false;
 +          failed = false;
 +          observed = false;
-+  reset()       { this.seen.clear(); this.total = { inputTokens: 0, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0, totalTokens: 0 }; this.cost = 0; this.unknown.clear(); this.costObserved = false; this.costIncomplete = false; this.failed = false; this.observed = false; }
++  reset()       { this.seen.clear(); this.total = { inputTokens: 0, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0, totalTokens: 0 }; this.cost = 0; this.unknown.clear(); this.costObserved = false; this.costIncomplete = false; this.compactionObserved = false; this.failed = false; this.observed = false; }
 +  accept(value         )       {
 +    const message = record(value);
 +    if (message.role !== "assistant") return;
@@ -723,9 +814,30 @@ new file mode 100644
 +    } else this.costIncomplete = true;
 +  }
 +
++  markIncomplete()       {
++    for (const name of Object.keys(this.total)) this.unknown.add(name                           );
++    this.costIncomplete = true;
++  }
++
++  acceptCompaction(value         )       {
++    this.compactionObserved = true;
++    const result = value && typeof value === "object" && !Array.isArray(value) ? record(value) : {};
++    if (!result.usage || typeof result.usage !== "object") {
++      // A compaction may consume tokens even if its terminal receipt is absent.
++      // Known assistant counters alone cannot establish the complete turn.
++      this.markIncomplete();
++      return;
++    }
++    const previousFailure = this.failed;
++    this.accept({ role: "assistant", id: "compaction", timestamp: result.firstKeptEntryId,
++      content: [result.tokensBefore, result.summary], usage: result.usage });
++    // A successful summary is not proof that an earlier failed model turn recovered.
++    this.failed = previousFailure;
++  }
++
 +  response()              {
 +    return {
-+      ...(this.observed ? { usage: { ...Object.fromEntries(Object.entries(this.total).filter(([name]) => !this.unknown.has(name                           ))), _meta: { paperclipPi: { provenance: "assistant_message_receipts", ...(this.costObserved && !this.costIncomplete ? { costUsd: this.cost, costSource: "pi_pricing_estimate" } : {}) } } } } : {}),
++      ...(this.observed ? { usage: { ...Object.fromEntries(Object.entries(this.total).filter(([name]) => !this.unknown.has(name                           ))), _meta: { paperclipPi: { provenance: this.compactionObserved ? "assistant_message_and_compaction_receipts" : "assistant_message_receipts", ...(this.costObserved && !this.costIncomplete ? { costUsd: this.cost, costSource: "pi_pricing_estimate" } : {}) } } } } : {}),
 +      ...(this.failed ? { _meta: { jetbrains: { air: { version: 1, sessionFailure: { severity: "error", category: "service", title: "Pi provider request failed" } } } } } : {}),
 +    };
 +  }

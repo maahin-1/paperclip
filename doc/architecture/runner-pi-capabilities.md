@@ -214,3 +214,17 @@ The closed snapshot has been exercised against actual pinned Pi through ACP
 initialization and the missing-credential admission path without a model call.
 The exact reported `currentModelId` and billable receipt still need credentialed
 local and Linux/Daytona qualification.
+
+Profile version 2 declaration digest: `sha256:b18deb44976b92e5e6b4f874f6e28dbbf23b34c917879ee3f7cdc03472919476`. It hashes the versioned
+profile domain, patched wrapper source and platform closure pins. Every native
+closure remains independently checked at launch. Version 1 warm sessions cannot
+be reused with this integration.
+
+Pi 0.84.2 emits `compaction_start`/`compaction_end`; the wrapper maps those
+events, includes terminal `result.usage` receipts once, and retains bounded
+summarization retry progress. Manual compaction requires an idle session and has
+a 120-second RPC deadline; deadline expiry terminates Pi so a timed-out operation
+cannot continue invisibly. Successful compaction reports
+`assistant_message_and_compaction_receipts` provenance. Pi's summarization retry
+helper discards failed-attempt usage, so any retry or missing compaction receipt
+invalidates complete-turn token/cost totals instead of inventing complete coverage.

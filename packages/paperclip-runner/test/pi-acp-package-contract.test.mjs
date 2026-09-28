@@ -77,7 +77,7 @@ async function fixture(t, extra = {}) {
     await rm(root, { recursive: true, force: true });
   });
   const initialized = await call("initialize", { protocolVersion: 1, clientCapabilities: { elicitation: { form: {} } } });
-  return { call, initialized, root, notifications, requests, setAnswer(value) { answer = value; } };
+  return { call, notify(method, params) { send({ jsonrpc: "2.0", method, params }); }, initialized, root, notifications, requests, setAnswer(value) { answer = value; } };
 }
 
 test("actual patched ACP process streams thinking and waits for settlement with usage", async (t) => {
@@ -121,4 +121,24 @@ test("provider failure is typed and unadmitted slash commands cannot bypass cont
   const result = await f.call("session/prompt", { sessionId: session.sessionId, prompt: [{ type: "text", text: "failure" }] });
   assert.equal(result._meta.jetbrains.air.sessionFailure.severity, "error");
   await assert.rejects(f.call("session/prompt", { sessionId: session.sessionId, prompt: [{ type: "text", text: "/export /outside/report.html" }] }), /not admitted/);
+});
+
+test("manual and automatic compaction retain Pi 0.84.2 progress and usage", async (t) => {
+  const f = await fixture(t); const session = await f.call("session/new", { cwd: join(f.root, "workspace"), mcpServers: [] });
+  const prompt = (text) => f.call("session/prompt", { sessionId: session.sessionId, prompt: [{ type: "text", text }] });
+  const manual = await prompt("/compact");
+  assert.equal(manual.usage.inputTokens, 5); assert.equal(manual.usage.totalTokens, 8);
+  assert.equal(manual.usage._meta.paperclipPi.provenance, "assistant_message_and_compaction_receipts");
+  const automatic = await prompt("auto-compact");
+  assert.equal(automatic.usage.inputTokens, 16); assert.equal(automatic.usage.totalTokens, 24);
+  assert.equal(automatic.usage._meta.paperclipPi.costUsd, 0.03);
+  assert.ok(f.notifications.some((event) => event.params?.update?.content?.text === "Context compaction finished."));
+  const retried = await prompt("retry-compact");
+  assert.equal(retried.usage.inputTokens, undefined);
+  assert.equal(retried.usage._meta.paperclipPi.costUsd, undefined);
+  assert.ok(f.notifications.some((event) => event.params?.update?.content?.text === "Context summarization is retrying a provider request."));
+  const active = prompt("long"); await new Promise((resolve) => setTimeout(resolve, 25));
+  await assert.rejects(prompt("/compact"), /requires an idle session/);
+  f.notify("session/cancel", { sessionId: session.sessionId }); await active;
+  assert.match(packageSource, /this\.request\(\{ type: "compact", customInstructions \}, 120000\)/);
 });

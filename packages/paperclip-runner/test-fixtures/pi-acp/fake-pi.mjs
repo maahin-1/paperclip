@@ -9,6 +9,7 @@ writeFileSync(sessionFile, JSON.stringify({ type: "session", cwd: process.cwd() 
 const output = (value) => process.stdout.write(JSON.stringify(value) + "\n");
 let active = false;
 let model = "fixture-model";
+const compaction = () => ({ firstKeptEntryId: "fixture-entry", tokensBefore: 50, summary: "Fixture compacted", usage: { input: 5, output: 2, cacheRead: 1, cacheWrite: 0, cost: { total: 0.02 } } });
 const finish = (answer = "done") => {
   output({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: answer } });
   output({ type: "message_end", message: { role: "assistant", timestamp: Date.now(), stopReason: "stop", usage: { input: 11, output: 3, cacheRead: 2, cacheWrite: 0, cost: { total: 0.01 } } } });
@@ -27,11 +28,13 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   if (request.type === "get_commands") { response({ commands: process.env.PI_FIXTURE_EXTENSION_FAIL ? [] : [{ name: "paperclip-runtime-ready-v1", description: "Paperclip runtime gate v1", source: "extension" }] }); return; }
   if (request.type === "steer") { response(); output({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: `steered:${request.message}` } }); return; }
   if (request.type === "follow_up") { response(); finish(`follow-up:${request.message}`); return; }
+  if (request.type === "compact") { output({ type: "compaction_start", reason: "manual" }); const result = compaction(); output({ type: "compaction_end", reason: "manual", result, aborted: false, willRetry: false }); response(result); return; }
   if (request.type === "abort") { response(); if (active) { active = false; output({ type: "agent_settled" }); } return; }
   if (request.type === "prompt") {
     response({ disposition: "started" }); active = true; output({ type: "agent_start" });
     if (request.message === "die") { process.exit(4); }
     if (request.message === "long") return;
+    if (request.message === "auto-compact" || request.message === "retry-compact") { output({ type: "compaction_start", reason: "threshold" }); if (request.message === "retry-compact") output({ type: "summarization_retry_scheduled" }); output({ type: "compaction_end", reason: "threshold", result: compaction(), aborted: false, willRetry: true }); finish("compacted"); return; }
     if (request.message === "question") { output({ type: "extension_ui_request", id: "question-id", method: "input", title: "Project name", placeholder: "Name" }); return; }
     if (request.message === "permission") { output({ type: "extension_ui_request", id: "permission-id", method: "select", title: 'paperclip.pi.permission.v1:{"toolCallId":"tool-1","toolName":"bash","input":{"command":"pwd"}}', options: ["Allow once", "Allow for this session", "Deny"] }); return; }
     if (request.message === "failure") {
